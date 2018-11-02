@@ -51,6 +51,7 @@ type sUser struct {
 	Hash    string `db:"hash"`
 	Session string `db:"session"`
 	RoleId  int    `db:"roleId"`
+	Game    string `db:"game"`
 }
 
 type pAuth struct {
@@ -116,6 +117,7 @@ func main() {
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Post("/newGame", (*Context).NewGame)
 	router.Subrouter(Context{}, "/").Post("/connect", (*Context).Connect)
+	router.Subrouter(Context{}, "/").Post("/check", (*Context).CheckGameSession)
 	//router.Subrouter(Context{}, "/files").Get("/", http.Handle(s))
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
@@ -183,6 +185,12 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
+	_, err = Conn.Exec("update users set game=? where id=?", session, user[0].ID)
+	if err != nil {
+		c.SetError(500, "Невозможно подключиться к игровой сессии")
+		return
+	}
+
 	var game sGame
 	game.Player = make([]sPlayer, 1, 1)
 	game.Player[0].PlayerInfo = newPlayer
@@ -202,7 +210,7 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 
 	var newPlayer sConnectPlayer
 	err := buf.Decode(&newPlayer)
-	fmt.Println(newPlayer.PlayerInfo.Login)
+	//fmt.Println(newPlayer.PlayerInfo.Login)
 	if err != nil {
 		c.SetError(400, "Невозможно преобразовать тело запроса в json")
 		log.Printf(err.Error())
@@ -225,22 +233,66 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(403, "Подключиться к сессии не удалось. Сессия заполнена")
 		return
 	}
+	n := 0
+	if user[0].Game == session {
+		for _, i := range GameMap[session].Player {
+			if i.PlayerInfo.Login == user[0].Login {
+				i.PlayerInfo.Session = user[0].Session
+			}
+			n++
+		}
+		c.Response = fmt.Sprintf("%d", n)
+		return
+	}
 	var Player sPlayer
 	Player.PlayerInfo = newPlayer.PlayerInfo
 	Player.Hero = nil
-
-	game := GameMap[session]
-	game.Count++
-	game.Player = append(game.Player, Player)
-	GameMap[session] = game
-	fmt.Println(GameMap[session].Count)
-	if GameMap[session].Count == maxCount {
-		delete(GameSessions, session)
+	if game, ok := GameMap[session]; ok {
+		_, err = Conn.Exec("update users set game=? where id=?", session, user[0].ID)
+		if err != nil {
+			c.SetError(500, "Невозможно подключиться к игровой сессии")
+			return
+		}
+		game.Count++
+		game.Player = append(game.Player, Player)
+		GameMap[session] = game
+		fmt.Println(GameMap[session].Count)
+		if GameMap[session].Count == maxCount {
+			delete(GameSessions, session)
+		}
+		c.Response = fmt.Sprintf("%d", len(GameMap[session].Player))
+		/*for _, i := range GameMap[session].Player {
+			fmt.Println(i.PlayerInfo.Login)
+		}*/
+		return
+	} else {
+		c.SetError(404, "Игровая сессия не найдена")
 	}
-	c.Response = fmt.Sprintf("%d", len(GameMap[session].Player))
-	/*for _, i := range GameMap[session].Player {
-		fmt.Println(i.PlayerInfo.Login)
-	}*/
+	return
+
+}
+
+func (c *Context) CheckGameSession(iWrt web.ResponseWriter, iReq *web.Request) {
+	buf := json.NewDecoder(iReq.Body)
+	defer iReq.Body.Close()
+
+	var newPlayer sPlayerInfo
+	err := buf.Decode(&newPlayer)
+	fmt.Println(newPlayer.Login)
+	if err != nil {
+		c.SetError(400, "Невозможно преобразовать тело запроса в json")
+		log.Printf(err.Error())
+		return
+	}
+	user := []sUser{}
+	err = Conn.Select(&user, "select * from users where login=? and session=?", newPlayer.Login, newPlayer.Session)
+
+	if len(user) != 1 {
+		c.SetError(401, "Неверный логин или ключ сессии. Нужна повторная авторизация")
+		return
+	}
+
+	c.Response = user[0].Game
 	return
 }
 
