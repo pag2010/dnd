@@ -81,8 +81,10 @@ type sConnectPlayer struct {
 }
 
 type sPlayer struct {
-	PlayerInfo sPlayerInfo
-	Hero       *sHero
+	//PlayerInfo sPlayerInfo
+	Login string
+	Id    int
+	Hero  *sHeroDB //Заменить на sHero
 }
 
 type sGame struct {
@@ -90,7 +92,120 @@ type sGame struct {
 	Count  int
 }
 
+type sHeroDB struct {
+	Id                   int    `db:"Id" json:"id"`
+	Name                 string `db:"Name" json:"name"`
+	Prehistory           string `db:"Prehistory" json:"prehistory"`
+	Exp                  int    `db:"Exp" json:"exp"`
+	Speed                int    `db:"Speed" json:"speed"`
+	HP                   int    `db:"HP" json:"hp"`
+	HPmax                int    `db:"HPmax" json:"hpmax"`
+	HitBonesMax          int    `db:"HitBonesMax" json:""`
+	HitBones             int    `db:"HitBones" json:""`
+	Strength             int    `db:"Strength" json:""`
+	Perception           int    `db:"Perception" json:""`
+	Endurance            int    `db:"Endurance" json:""`
+	Charisma             int    `db:"Charisma" json:""`
+	Intelligence         int    `db:"Intelligence" json:""`
+	Agility              int    `db:"Agility" json:""`
+	MasterBonus          int    `db:"MasterBonus" json:""`
+	DeathSavingThrowGood int    `db:"DeathSavingThrowGood" json:""`
+	DeathSavingThrowBad  int    `db:"DeathSavingThrowBad" json:""`
+	TemporaryHP          int    `db:"TemporaryHP" json:""`
+	AC                   int    `db:"AC" json:""`
+	Initiative           int    `db:"Initiative" json:""`
+	PassiveAttention     bool   `db:"PassiveAttention" json:""`
+	Inspiration          bool   `db:"Inspiration" json:""`
+	Ammo                 int    `db:"Ammo" json:""`
+	Languages            string `db:"Languages" json:""`
+	SavingThrowS         bool   `db:"SavingThrowS" json:""`
+	SavingThrowP         bool   `db:"SavingThrowP" json:""`
+	SavingThrowE         bool   `db:"SavingThrowE" json:""`
+	SavingThrowC         bool   `db:"SavingThrowC" json:""`
+	SavingThrowI         bool   `db:"SavingThrowI" json:""`
+	SavingThrowA         bool   `db:"SavingThrowA" json:""`
+	Athletics            bool   `db:"Athletics" json:""`
+	Acrobatics           bool   `db:"Acrobatics" json:""`
+	Juggle               bool   `db:"Juggle" json:""`
+	Stealth              bool   `db:"Stealth" json:""`
+	Magic                bool   `db:"Magic" json:""`
+	History              bool   `db:"History" json:""`
+	Analysis             bool   `db:"Analysis" json:""`
+	Nature               bool   `db:"Nature" json:""`
+	Religion             bool   `db:"Religion" json:""`
+	AnimalCare           bool   `db:"AnimalCare" json:""`
+	Insight              bool   `db:"Insight" json:""`
+	Medicine             bool   `db:"Medicine" json:""`
+	Attention            bool   `db:"Attention" json:""`
+	Survival             bool   `db:"Survival" json:""`
+	Deception            bool   `db:"Deception" json:""`
+	Intimidation         bool   `db:"Intimidation" json:""`
+	Performance          bool   `db:"Performance" json:""`
+	Conviction           bool   `db:"Conviction" json:""`
+	WeaponFirstId        int    `db:"WeaponFirstId" json:""`
+	WeaponSecondId       int    `db:"WeaponSecondId" json:""`
+	ArmorId              int    `db:"ArmorId" json:""`
+	ShieldId             int    `db:"ShieldId" json:""`
+}
+
+type sWeaponDB struct {
+}
+
 type sHero struct {
+	DB *sHeroDB
+	/*Id                   int
+	Name                 string
+	Prehistory           string
+	Exp                  int
+	Speed                int
+	HP                   int
+	HPmax                int
+	HitBonesMax          int
+	HitBones             int
+	Strength             int
+	Perception           int
+	Endurance            int
+	Charisma             int
+	Intelligence         int
+	Agility              int
+	MasterBonus          int
+	DeathSavingThrowGood int
+	DeathSavingThrowBad  int
+	TemporaryHP          int
+	AC                   int
+	Initiative           int
+	PassiveAttention     bool
+	Inspiration          bool
+	Ammo                 int
+	Languages            string
+	SavingThrowS         bool
+	SavingThrowP         bool
+	SavingThrowE         bool
+	SavingThrowC         bool
+	SavingThrowI         bool
+	SavingThrowA         bool
+	Athletics            bool
+	Acrobatics           bool
+	Juggle               bool
+	Stealth              bool
+	Magic                bool
+	History              bool
+	Analysis             bool
+	Nature               bool
+	Religion             bool
+	AnimalCare           bool
+	Insight              bool
+	Medicine             bool
+	Attention            bool
+	Survival             bool
+	Deception            bool
+	Intimidation         bool
+	Performance          bool
+	Conviction           bool
+	WeaponFirstId        int
+	WeaponSecondId       int
+	ArmorId              int
+	ShieldId             int*/
 }
 
 var config sConfig
@@ -193,7 +308,8 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 
 	var game sGame
 	game.Player = make([]sPlayer, 1, 1)
-	game.Player[0].PlayerInfo = newPlayer
+	game.Player[0].Login = newPlayer.Login
+	game.Player[0].Id = user[0].ID
 	game.Player[0].Hero = nil
 	game.Count = 1
 	GameMap[session.String()] = game
@@ -228,39 +344,53 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(403, "Подключиться к сессии может только player")
 		return
 	}
-	session := newPlayer.Game
-	if GameMap[session].Count == maxCount {
+	gameSession := newPlayer.Game
+
+	n := 0
+	if _, ok := GameMap[gameSession]; ok {
+		if user[0].Game == gameSession {
+			for _, i := range GameMap[gameSession].Player {
+				//log.Printf(i.Login)
+				if i.Id == user[0].ID {
+					//i.PlayerInfo.Session = user[0].Session
+					break
+				}
+				n++
+			}
+			c.Response = fmt.Sprintf("%d", n+1)
+			return
+		}
+	} else {
+		c.SetError(404, "Игровая сессия не найдена")
+		return
+	}
+	if GameMap[gameSession].Count == maxCount {
 		c.SetError(403, "Подключиться к сессии не удалось. Сессия заполнена")
 		return
 	}
-	n := 0
-	if user[0].Game == session {
-		for _, i := range GameMap[session].Player {
-			if i.PlayerInfo.Login == user[0].Login {
-				i.PlayerInfo.Session = user[0].Session
-			}
-			n++
-		}
-		c.Response = fmt.Sprintf("%d", n)
+	var Player sPlayer
+	//Player.PlayerInfo = newPlayer.PlayerInfo
+	Player.Login = newPlayer.PlayerInfo.Login
+	Player.Id = user[0].ID
+	err, Player.Hero = LoadHero(2, 1) //TODO добавить функцию поиска героя
+	if err != nil {
+		c.SetError(500, "Невозможно загрузить героя")
 		return
 	}
-	var Player sPlayer
-	Player.PlayerInfo = newPlayer.PlayerInfo
-	Player.Hero = nil
-	if game, ok := GameMap[session]; ok {
-		_, err = Conn.Exec("update users set game=? where id=?", session, user[0].ID)
+	if game, ok := GameMap[gameSession]; ok {
+		_, err = Conn.Exec("update users set game=? where id=?", gameSession, user[0].ID)
 		if err != nil {
 			c.SetError(500, "Невозможно подключиться к игровой сессии")
 			return
 		}
 		game.Count++
 		game.Player = append(game.Player, Player)
-		GameMap[session] = game
-		fmt.Println(GameMap[session].Count)
-		if GameMap[session].Count == maxCount {
-			delete(GameSessions, session)
+		GameMap[gameSession] = game
+		fmt.Println(GameMap[gameSession].Count)
+		if GameMap[gameSession].Count == maxCount {
+			delete(GameSessions, gameSession)
 		}
-		c.Response = fmt.Sprintf("%d", len(GameMap[session].Player))
+		c.Response = fmt.Sprintf("%d", len(GameMap[gameSession].Player))
 		/*for _, i := range GameMap[session].Player {
 			fmt.Println(i.PlayerInfo.Login)
 		}*/
@@ -270,6 +400,22 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 	return
 
+}
+
+func LoadHero(playerId int, heroId int) (err error, h *sHeroDB) {
+	hero := []sHeroDB{}
+	err = Conn.Select(&hero, "select * from Heroes where id=?", heroId)
+	if err != nil {
+		log.Println(err.Error())
+		return err, nil
+	}
+	buf, err := json.Marshal(hero[0])
+	if err != nil {
+		return err, nil
+	}
+	log.Println(string(buf))
+	h = &hero[0]
+	return nil, h
 }
 
 func (c *Context) CheckGameSession(iWrt web.ResponseWriter, iReq *web.Request) {
