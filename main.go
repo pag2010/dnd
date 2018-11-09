@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 
 	//"strings"
+	"errors"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocraft/web"
@@ -40,9 +41,13 @@ type httpError2 struct { //переопределить метод marshal
 }*/
 
 type Context struct {
-	Err      *httpError `json:"error,omitempty"`
-	Response string     `json:"response,omitempty"`
-	Data     string     `json:"data,omitempty"`
+	User *sUser `json:"-"`
+	/*Hero     int    `json:"-"`
+	Game     string*/
+	Player   *sConnectPlayer `json:"-"`
+	Err      *httpError      `json:"error,omitempty"`
+	Response string          `json:"response,omitempty"`
+	Data     string          `json:"data,omitempty"`
 }
 
 type sUser struct {
@@ -78,13 +83,14 @@ type sPlayerInfo struct {
 type sConnectPlayer struct {
 	PlayerInfo sPlayerInfo `json:"auth"`
 	Game       string      `json:"game"`
+	Hero       int         `json:"hero"`
 }
 
 type sPlayer struct {
 	//PlayerInfo sPlayerInfo
 	Login string
 	Id    int
-	Hero  *sHeroDB //Заменить на sHero
+	Hero  *sHero //Заменить на sHero
 }
 
 type sGame struct {
@@ -142,17 +148,25 @@ type sHeroDB struct {
 	Intimidation         bool   `db:"Intimidation" json:""`
 	Performance          bool   `db:"Performance" json:""`
 	Conviction           bool   `db:"Conviction" json:""`
-	WeaponFirstId        int    `db:"WeaponFirstId" json:""`
-	WeaponSecondId       int    `db:"WeaponSecondId" json:""`
-	ArmorId              int    `db:"ArmorId" json:""`
-	ShieldId             int    `db:"ShieldId" json:""`
+	WeaponFirstId        int    `db:"WeaponFirstId"`
+	WeaponSecondId       int    `db:"WeaponSecondId"`
+	ArmorId              int    `db:"ArmorId"`
+	ShieldId             int    `db:"ShieldId"`
 }
 
 type sWeaponDB struct {
+	Id         int    `db:"Id" json:""`
+	Name       string `db:"Name" json:""`
+	Damage     string `db:"Damage" json:""`
+	DmgType    string `db:"DmgType" json:""`
+	WeaponType string `db:"WeaponType" json:""`
+	Cost       int    `db:"Cost" json:""`
+	Weight     int    `db:"Weight" json:""`
 }
 
 type sHero struct {
-	DB *sHeroDB
+	Hero    *sHeroDB    `json:"hero"`
+	Weapons []sWeaponDB `json:"weapons"`
 	/*Id                   int
 	Name                 string
 	Prehistory           string
@@ -208,6 +222,11 @@ type sHero struct {
 	ShieldId             int*/
 }
 
+type HeroToShow struct {
+	Id   int    `db:"id"`
+	Name string `db:"name"`
+}
+
 var config sConfig
 var Conn *sqlx.DB
 var GameMap map[string]sGame
@@ -221,18 +240,14 @@ func main() {
 	}
 	GameMap = make(map[string]sGame)
 	GameSessions = make(map[string]int)
-	/*Conn, err = sqlx.Connect("mysql", config.DBConnect)
-	if err != nil {
-		log.Printf(err.Error())
-		return
-	}*/
 	//s := http.StripPrefix("/files/", http.FileServer(http.Dir("./files/")))
 	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Post("/newGame", (*Context).NewGame)
-	router.Subrouter(Context{}, "/").Post("/connect", (*Context).Connect)
+	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Post("/check", (*Context).CheckGameSession)
+	router.Subrouter(Context{}, "/").Post("/heroList", (*Context).GetHeroes)
 	//router.Subrouter(Context{}, "/files").Get("/", http.Handle(s))
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
@@ -320,7 +335,7 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	return
 }
 
-func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
+func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	buf := json.NewDecoder(iReq.Body)
 	defer iReq.Body.Close()
 
@@ -332,6 +347,7 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		log.Printf(err.Error())
 		return
 	}
+
 	user := []sUser{}
 	err = Conn.Select(&user, "select * from users where login=? and session=?", newPlayer.PlayerInfo.Login, newPlayer.PlayerInfo.Session)
 
@@ -339,20 +355,28 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(401, "Неверный логин или ключ сессии. Нужна повторная авторизация")
 		return
 	}
+	c.User = &user[0]
+	c.Player = &newPlayer
+	next(iWrt, iReq)
+}
 
-	if user[0].RoleId != 2 {
+func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
+	if c.Player.Hero == 0 {
+		c.SetError(404, "Невозможно найти героя")
+		return
+	}
+
+	if c.User.RoleId != 2 {
 		c.SetError(403, "Подключиться к сессии может только player")
 		return
 	}
-	gameSession := newPlayer.Game
+	gameSession := c.Player.Game
 
 	n := 0
 	if _, ok := GameMap[gameSession]; ok {
-		if user[0].Game == gameSession {
+		if c.User.Game == gameSession {
 			for _, i := range GameMap[gameSession].Player {
-				//log.Printf(i.Login)
-				if i.Id == user[0].ID {
-					//i.PlayerInfo.Session = user[0].Session
+				if i.Id == /*user[0].ID*/ c.User.ID {
 					break
 				}
 				n++
@@ -369,16 +393,16 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 	var Player sPlayer
-	//Player.PlayerInfo = newPlayer.PlayerInfo
-	Player.Login = newPlayer.PlayerInfo.Login
-	Player.Id = user[0].ID
-	err, Player.Hero = LoadHero(2, 1) //TODO добавить функцию поиска героя
+	Player.Login = c.User.Login
+	Player.Id = c.User.ID
+	Player.Hero = new(sHero)
+	err := Player.Hero.LoadHero(c.Player.Hero)
 	if err != nil {
 		c.SetError(500, "Невозможно загрузить героя")
 		return
 	}
 	if game, ok := GameMap[gameSession]; ok {
-		_, err = Conn.Exec("update users set game=? where id=?", gameSession, user[0].ID)
+		_, err = Conn.Exec("update users set game=? where id=?", gameSession, c.User.ID)
 		if err != nil {
 			c.SetError(500, "Невозможно подключиться к игровой сессии")
 			return
@@ -399,23 +423,62 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(404, "Игровая сессия не найдена")
 	}
 	return
-
 }
 
-func LoadHero(playerId int, heroId int) (err error, h *sHeroDB) {
+func (c *Context) GetHeroes(iWrt web.ResponseWriter, iReq *web.Request) {
+	list := make([]HeroToShow, 0, 0)
+	LoadHeroList(2, &list)
+	return
+}
+
+func LoadHeroList(idUser int, h *[]HeroToShow) (err error) {
+	h = nil
+	heroes := []HeroToShow{}
+	err = Conn.Select(&heroes, "select heroes.id, name from herotouser inner join heroes on idhero = heroes.id where iduser = ?", idUser)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+	buf, err := json.Marshal(heroes)
+	if err != nil {
+		return err
+	}
+	log.Println(string(buf))
+	h = &heroes
+	return nil
+}
+
+func (h *sHero) LoadHero(heroId int) (err error) { //TODO добавить функцию поиска героя
+	h.Hero = nil
 	hero := []sHeroDB{}
 	err = Conn.Select(&hero, "select * from Heroes where id=?", heroId)
 	if err != nil {
-		log.Println(err.Error())
-		return err, nil
+		//c.SetError(500, "Невозможно загрузить героя из БД")
+		return err
+	}
+	if len(hero) != 1 {
+		//c.SetError(404, "Не удалось найти героя")
+		return errors.New("Не удалось найти героя в БД")
 	}
 	buf, err := json.Marshal(hero[0])
 	if err != nil {
-		return err, nil
+		return err
 	}
 	log.Println(string(buf))
-	h = &hero[0]
-	return nil, h
+	h.Hero = &hero[0]
+
+	return nil
+}
+
+func (h *sHero) LoadWeapons() error {
+	h.Weapons = nil
+	weapons := []sWeaponDB{}
+	err := Conn.Select(&weapons, "SELECT weapons.Id, weapons.Name, weapons.Damage, dmgtype.name as 'DmgType', weapontype.Name as 'WeaponType', weapons.Cost, weapons.Weight from weapons inner join dmgtype on weapons.dmgtype = dmgtype.id inner join weapontype on weapons.Type= weapontype.id where weapons.Id = ? and weapons.Id = ?", h.Hero.WeaponFirstId, h.Hero.WeaponSecondId)
+	if err != nil {
+		return err
+	}
+	h.Weapons = weapons
+	return nil
 }
 
 func (c *Context) CheckGameSession(iWrt web.ResponseWriter, iReq *web.Request) {
@@ -562,22 +625,3 @@ func (c *Context) SetError(code int, text string, args ...interface{}) {
 		}
 	}
 }
-
-/*func (c *Context) SendStatus(code int, text string, iWrt web.ResponseWriter) {
-	if c.Err != nil {
-		iWrt.WriteHeader(c.Err.Code)
-	} else {
-		iWrt.WriteHeader(200)
-	}
-	lData, err := json.Marshal(c)
-	if err != nil {
-		fmt.Fprintln(iWrt, "Все пропало")
-		return
-	}
-	fmt.Println(string(lData))
-	fmt.Fprintln(iWrt, string(lData))
-}*/
-
-/*func (c *Context) FilesHandler(iWrt web.ResponseWriter, iReq *web.Request) {
-	http.FileServer(http.Dir("./files"))
-}*/
