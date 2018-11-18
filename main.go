@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocraft/web"
@@ -76,18 +78,19 @@ type sConnectPlayer struct {
 	PlayerInfo sPlayerInfo `json:"auth"`
 	Game       string      `json:"game"`
 	Hero       int         `json:"hero"`
+	PlayerId   int         `json:"playerId"`
 }
 
 type sPlayer struct {
-	//PlayerInfo sPlayerInfo
 	Login string
 	Id    int
-	Hero  *sHero //Заменить на sHero
+	Hero  *sHero
 }
 
 type sGame struct {
 	Player []sPlayer
 	Count  int
+	sync.RWMutex
 }
 
 type sHeroDB struct {
@@ -166,9 +169,17 @@ type HeroToShow struct { //Нужен только для показа спис�
 	Name string `db:"name"`
 }
 
+type sGameMap struct {
+	m map[string]sGame
+	sync.RWMutex
+}
+
 var config sConfig
 var Conn *sqlx.DB
-var GameMap map[string]sGame
+
+var GameMap sGameMap
+
+//var GameMap map[string]sGame
 var GameSessions map[string]int
 
 func main() {
@@ -177,21 +188,21 @@ func main() {
 		log.Printf(err.Error())
 		return
 	}
-	GameMap = make(map[string]sGame)
+	GameMap.m = make(map[string]sGame)
 	GameSessions = make(map[string]int)
-	//s := http.StripPrefix("/files/", http.FileServer(http.Dir("./files/")))
-	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
+	//router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
+	router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
 	router.Subrouter(Context{}, "/").Post("/heroList", (*Context).GetHeroes)
-	//router.Subrouter(Context{}, "/files").Get("/", http.Handle(s))
+	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveHero", (*Context).SaveHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveGame", (*Context).SaveGame)
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
 	http.Handle("/", router)
-	//http.Handle("/files/", s)
 	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
 		log.Printf(err.Error())
@@ -246,7 +257,9 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	game.Player[0].Id = c.User.ID
 	game.Player[0].Hero = nil
 	game.Count = 1
-	GameMap[session.String()] = game
+	GameMap.Lock()
+	GameMap.m[session.String()] = game
+	defer GameMap.Unlock()
 	//GameSessions = append(GameSessions, session.String())
 	GameSessions[session.String()] = 1
 
@@ -260,7 +273,6 @@ func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, n
 
 	var newPlayer sConnectPlayer
 	err := buf.Decode(&newPlayer)
-	//fmt.Println(newPlayer.PlayerInfo.Login)
 	if err != nil {
 		c.SetError(400, "Невозможно преобразовать тело запроса в json")
 		log.Printf(err.Error())
@@ -283,15 +295,15 @@ func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, n
 func (c *Context) Reconnect(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	gameSession := c.User.Game
 	n := 0
-	if _, ok := GameMap[gameSession]; ok {
-		for _, i := range GameMap[gameSession].Player {
+	if _, ok := GameMap.m[gameSession]; ok {
+		for _, i := range GameMap.m[gameSession].Player {
 			if i.Id == c.User.ID {
 				break
 			}
 			n++
 		}
 		if n <= maxCount {
-			c.Hero = GameMap[gameSession].Player[n].Hero
+			c.Hero = GameMap.m[gameSession].Player[n].Hero
 			c.Response = fmt.Sprintf("%d", n)
 		} else {
 			_, err := Conn.Exec("update users set game=? where id=?", "", c.User.ID)
@@ -322,19 +334,23 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
-	if GameMap[gameSession].Count == maxCount {
+	if GameMap.m[gameSession].Count == maxCount {
 		c.SetError(403, "Подключиться к сессии не удалось. Сессия заполнена")
 		return
 	}
+
 	if c.Err != nil {
 		return
 	}
+
+	GameMap.Lock()
+	defer GameMap.Unlock()
 	var Player sPlayer
 	Player.Login = c.User.Login
 	Player.Id = c.User.ID
 
 	Player.Hero = c.Hero
-	if game, ok := GameMap[gameSession]; ok {
+	if game, ok := GameMap.m[gameSession]; ok {
 		_, err := Conn.Exec("update users set game=? where id=?", gameSession, c.User.ID)
 		if err != nil {
 			c.SetError(500, "Невозможно подключиться к игровой сессии")
@@ -349,8 +365,8 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		game.Count++
 		//game.Player = append(game.Player, Player)
 		game.Player[n] = Player
-		GameMap[gameSession] = game
-		if GameMap[gameSession].Count == maxCount {
+		GameMap.m[gameSession] = game
+		if GameMap.m[gameSession].Count == maxCount {
 			delete(GameSessions, gameSession)
 		}
 		c.Response = fmt.Sprintf("%d", n)
@@ -370,25 +386,27 @@ func (c *Context) Disconnect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 	n := 0
+	GameMap.Lock()
+	defer GameMap.Unlock()
 	gameSession := c.User.Game
-	if _, ok := GameMap[c.User.Game]; ok {
+	if _, ok := GameMap.m[c.User.Game]; ok {
 		_, err := Conn.Exec("Update users set game = '' where id=?", c.User.ID)
 		if err != nil {
 			c.SetError(500, "Ошибка при удалении игры")
 			return
 		}
-		for _, i := range GameMap[gameSession].Player {
+		for _, i := range GameMap.m[gameSession].Player {
 			if i.Id == c.User.ID {
 				break
 			}
 			n++
 		}
-		game := GameMap[c.User.Game]
+		game := GameMap.m[c.User.Game]
 		game.Player[n].Hero = nil
 		game.Player[n].Id = 0
 		game.Player[n].Login = ""
 		game.Count--
-		GameMap[c.User.Game] = game
+		GameMap.m[c.User.Game] = game
 		c.Response = "true"
 	} else {
 		c.SetError(404, "Игра не обнаружена")
@@ -399,6 +417,7 @@ func (c *Context) Disconnect(iWrt web.ResponseWriter, iReq *web.Request) {
 		}
 	}
 }
+
 func (c *Context) GetHeroes(iWrt web.ResponseWriter, iReq *web.Request) {
 	list := make([]HeroToShow, 0, 0)
 	LoadHeroList(2, &list)
@@ -423,7 +442,6 @@ func LoadHeroList(idUser int, h *[]HeroToShow) (err error) {
 }
 
 func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) { //TODO добавить функцию поиска героя
-	//log.Println("Загрузка героя")
 	hero := []sHeroDB{}
 	err := Conn.Select(&hero, "select * from Heroes where id=?", c.Player.Hero)
 	if err != nil {
@@ -457,14 +475,15 @@ func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(403, "Закончить игру может только master")
 		return
 	}
-
-	if _, ok := GameMap[c.User.Game]; ok {
+	GameMap.Lock()
+	defer GameMap.Unlock()
+	if _, ok := GameMap.m[c.User.Game]; ok {
 		_, err := Conn.Exec("Update users set game = '' where id in (Select id from (Select id from users where game = ?)as a)", c.User.Game)
 		if err != nil {
 			c.SetError(500, "Ошибка при удалении игры")
 			return
 		}
-		delete(GameMap, c.User.Game)
+		delete(GameMap.m, c.User.Game)
 		c.Response = "true"
 	} else {
 		c.SetError(404, "Игра не обнаружена")
@@ -474,6 +493,74 @@ func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
 			return
 		}
 	}
+}
+
+func BoolToInt(b bool) byte {
+	if b {
+		return byte(1)
+	}
+	return byte(0)
+}
+
+func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
+	if c.User.RoleId != 2 {
+		c.SetError(403, "Сохранить героя может только игрок")
+		return
+	}
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if game.Player[c.Player.PlayerId].Id == c.User.ID {
+			h := game.Player[c.Player.PlayerId].Hero.HeroDB
+			_, err := Conn.Exec("update heroes set Exp=100, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
+
+			if err != nil {
+				c.SetError(500, "Невозможно сохранить героя")
+				return
+			}
+			c.Response = "true"
+			return
+		} else {
+			c.SetError(404, "Игрок не найден в игровой сессии")
+			return
+		}
+	} else {
+		c.SetError(404, "Игровая сессия не найдена")
+		return
+	}
+
+}
+
+func (c *Context) SaveGame(iWrt web.ResponseWriter, iReq *web.Request) {
+	if c.User.RoleId != 1 {
+		c.SetError(403, "Сохранить игру может только мастер")
+		return
+	}
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		var e error
+		tx, err := Conn.Begin()
+		if err != nil {
+			c.SetError(500, "Невозможно начать транзакцию с БД")
+			return
+		}
+		for _, i := range game.Player {
+			if i.Hero != nil {
+				h := i.Hero.HeroDB
+				_, err := tx.Exec("update heroes set Exp=100, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
+				if err != nil {
+					e = err
+				}
+			}
+		}
+		if e != nil {
+			c.SetError(500, "Невозможно сохранить игру")
+			tx.Rollback()
+			return
+		}
+		tx.Commit()
+		c.Response = "true"
+		return
+
+	}
+
 }
 
 func (c *Context) Reg(iWrt web.ResponseWriter, iReq *web.Request) {
@@ -600,4 +687,14 @@ func (c *Context) SetError(code int, text string, args ...interface{}) {
 			c.Err.Text = fmt.Sprintf(text, args...)
 		}
 	}
+}
+
+func (c *Context) Logger(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	t := time.Now()
+	next(iWrt, iReq)
+	if c.Err != nil {
+		fmt.Printf("[ %s ] %d %s\n", time.Since(t), 200, iReq.URL)
+		return
+	}
+	fmt.Printf("[ %s ] %d %s\n", time.Since(t), 200, iReq.URL)
 }
