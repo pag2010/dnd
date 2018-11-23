@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 )
 
 const conf = "config.txt"
+const sqlstr = "Install.sqlx"
 const maxCount = 6
 
 type httpError struct { //переопределить метод marshal
@@ -88,8 +91,8 @@ type sPlayer struct {
 }
 
 type sGame struct {
-	Player []sPlayer
-	Count  int
+	Player []sPlayer //сделать map[string]*sPlayer
+	Count  int       //убрать
 	sync.RWMutex
 }
 
@@ -182,8 +185,30 @@ var GameMap sGameMap
 //var GameMap map[string]sGame
 var GameSessions map[string]int
 
+var DBConnStr string
+var TokenStr string
+var Ini bool
+
+func init() {
+	flag.BoolVar(&Ini, "i", false, "If you want to install do it")
+	flag.StringVar(&DBConnStr, "db", "", "Here you should place database connection string. For example UserName:Password@tcp(localhost:3306)/DataBaseName")
+	flag.StringVar(&TokenStr, "token", "lol", "Here you should place admin token")
+}
+
 func main() {
-	err := LoadConfig()
+	var err error
+	flag.Parse()
+	if Ini {
+		err = InstallConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = InstallDB()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	err = LoadConfig()
 	if err != nil {
 		log.Printf(err.Error())
 		return
@@ -339,9 +364,9 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
-	if c.Err != nil {
+	/*if c.Err != nil {
 		return
-	}
+	}*/
 
 	GameMap.Lock()
 	defer GameMap.Unlock()
@@ -367,7 +392,7 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		game.Player[n] = Player
 		GameMap.m[gameSession] = game
 		if GameMap.m[gameSession].Count == maxCount {
-			delete(GameSessions, gameSession)
+			delete(GameSessions, gameSession) // проще пробежать по всей map
 		}
 		c.Response = fmt.Sprintf("%d", n)
 		/*for _, i := range GameMap[session].Player {
@@ -511,7 +536,6 @@ func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
 		if game.Player[c.Player.PlayerId].Id == c.User.ID {
 			h := game.Player[c.Player.PlayerId].Hero.HeroDB
 			_, err := Conn.Exec("update heroes set Exp=100, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
-
 			if err != nil {
 				c.SetError(500, "Невозможно сохранить героя")
 				return
@@ -697,4 +721,35 @@ func (c *Context) Logger(iWrt web.ResponseWriter, iReq *web.Request, next web.Ne
 		return
 	}
 	fmt.Printf("[ %s ] %d %s\n", time.Since(t), 200, iReq.URL)
+}
+
+func InstallDB() error {
+	b, err := ioutil.ReadFile(sqlstr)
+	if err != nil {
+		return err
+	}
+	var conn *sqlx.DB
+	fmt.Println(DBConnStr)
+	fmt.Println(TokenStr)
+	conn, err = sqlx.Connect("mysql", DBConnStr)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Exec(string(b))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func InstallConfig() error {
+	var c sConfig
+	c.AdminToken = TokenStr
+	c.DBConnect = DBConnStr
+	lData, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(conf, lData, os.ModePerm)
+	return err
 }

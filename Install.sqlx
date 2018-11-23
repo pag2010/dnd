@@ -1,0 +1,221 @@
+/*
+MySQL Backup
+Source Server Version: 5.7.20
+Source Database: dnd
+Date: 23.11.2018 20:08:44
+*/
+
+SET FOREIGN_KEY_CHECKS=0;
+
+-- ----------------------------
+--  Table structure for `armors`
+-- ----------------------------
+DROP TABLE IF EXISTS `armors`;
+CREATE TABLE `armors` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(50) NOT NULL DEFAULT '''Неизвестный доспех''',
+  `AC` int(11) NOT NULL DEFAULT '0',
+  `Type` int(10) unsigned NOT NULL DEFAULT '1',
+  `Weight` int(11) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`Id`),
+  KEY `Type` (`Type`),
+  CONSTRAINT `armors_ibfk_1` FOREIGN KEY (`Type`) REFERENCES `armortype` (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `armortype`
+-- ----------------------------
+DROP TABLE IF EXISTS `armortype`;
+CREATE TABLE `armortype` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(30) NOT NULL DEFAULT '',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251 ROW_FORMAT=DYNAMIC;
+
+-- ----------------------------
+--  Table structure for `classes`
+-- ----------------------------
+DROP TABLE IF EXISTS `classes`;
+CREATE TABLE `classes` (
+  `Id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(50) NOT NULL DEFAULT '',
+  `About` varchar(255) NOT NULL DEFAULT '',
+  `BoneHit` varchar(20) NOT NULL DEFAULT '',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `dmgtype`
+-- ----------------------------
+DROP TABLE IF EXISTS `dmgtype`;
+CREATE TABLE `dmgtype` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` char(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `heroes`
+-- ----------------------------
+DROP TABLE IF EXISTS `heroes`;
+CREATE TABLE `heroes` (
+  `Id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(50) NOT NULL DEFAULT '',
+  `Prehistory` varchar(255) NOT NULL DEFAULT '',
+  `Exp` int(10) unsigned NOT NULL DEFAULT '0',
+  `Speed` int(10) unsigned NOT NULL DEFAULT '30',
+  `HP` int(11) NOT NULL DEFAULT '0',
+  `HPmax` int(11) NOT NULL DEFAULT '0',
+  `HitBonesMax` int(11) NOT NULL DEFAULT '1',
+  `HitBones` int(11) NOT NULL DEFAULT '1',
+  `Strength` int(11) NOT NULL DEFAULT '1',
+  `Perception` int(11) NOT NULL DEFAULT '1',
+  `Endurance` int(11) NOT NULL DEFAULT '1',
+  `Charisma` int(11) NOT NULL DEFAULT '1',
+  `Intelligence` int(11) NOT NULL DEFAULT '1',
+  `Agility` int(11) NOT NULL DEFAULT '1',
+  `MasterBonus` int(11) NOT NULL DEFAULT '2',
+  `DeathSavingThrowGood` int(11) NOT NULL DEFAULT '0',
+  `DeathSavingThrowBad` int(11) NOT NULL DEFAULT '0',
+  `TemporaryHP` int(11) NOT NULL DEFAULT '0',
+  `AC` int(11) NOT NULL DEFAULT '0',
+  `Initiative` int(11) NOT NULL DEFAULT '0',
+  `PassiveAttention` tinyint(4) NOT NULL DEFAULT '0',
+  `Inspiration` tinyint(4) NOT NULL DEFAULT '0',
+  `Ammo` int(11) NOT NULL DEFAULT '0',
+  `Languages` varchar(255) NOT NULL DEFAULT '',
+  `SavingThrowS` tinyint(4) unsigned NOT NULL DEFAULT '0',
+  `SavingThrowP` tinyint(4) NOT NULL DEFAULT '0',
+  `SavingThrowE` tinyint(4) NOT NULL DEFAULT '0',
+  `SavingThrowC` tinyint(4) NOT NULL DEFAULT '0',
+  `SavingThrowI` tinyint(4) NOT NULL DEFAULT '0',
+  `SavingThrowA` tinyint(4) NOT NULL DEFAULT '0',
+  `Athletics` tinyint(4) NOT NULL DEFAULT '0',
+  `Acrobatics` tinyint(4) NOT NULL DEFAULT '0',
+  `Juggle` tinyint(4) NOT NULL DEFAULT '0',
+  `Stealth` tinyint(4) NOT NULL DEFAULT '0',
+  `Magic` tinyint(4) NOT NULL DEFAULT '0',
+  `History` tinyint(4) NOT NULL DEFAULT '0',
+  `Analysis` tinyint(4) NOT NULL DEFAULT '0',
+  `Nature` tinyint(4) NOT NULL DEFAULT '0',
+  `Religion` tinyint(4) NOT NULL DEFAULT '0',
+  `AnimalCare` tinyint(4) NOT NULL DEFAULT '0',
+  `Insight` tinyint(4) NOT NULL DEFAULT '0',
+  `Medicine` tinyint(4) NOT NULL DEFAULT '0',
+  `Attention` tinyint(4) NOT NULL DEFAULT '0',
+  `Survival` tinyint(4) NOT NULL DEFAULT '0',
+  `Deception` tinyint(4) NOT NULL DEFAULT '0',
+  `Intimidation` tinyint(4) NOT NULL DEFAULT '0',
+  `Performance` tinyint(4) NOT NULL DEFAULT '0',
+  `Conviction` tinyint(4) NOT NULL DEFAULT '0',
+  `WeaponFirstId` int(10) unsigned NOT NULL DEFAULT '1',
+  `WeaponSecondId` int(10) unsigned NOT NULL DEFAULT '1',
+  `ArmorId` int(10) unsigned NOT NULL DEFAULT '1',
+  `ShieldId` int(10) unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`Id`),
+  KEY `WeaponFirstId` (`WeaponFirstId`),
+  KEY `WeaponSecondId` (`WeaponSecondId`),
+  KEY `ArmorId` (`ArmorId`),
+  KEY `ShieldId` (`ShieldId`),
+  CONSTRAINT `heroes_ibfk_1` FOREIGN KEY (`WeaponFirstId`) REFERENCES `weapons` (`Id`),
+  CONSTRAINT `heroes_ibfk_2` FOREIGN KEY (`WeaponSecondId`) REFERENCES `weapons` (`Id`),
+  CONSTRAINT `heroes_ibfk_3` FOREIGN KEY (`ArmorId`) REFERENCES `armors` (`Id`),
+  CONSTRAINT `heroes_ibfk_4` FOREIGN KEY (`ShieldId`) REFERENCES `armors` (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `herotoclass`
+-- ----------------------------
+DROP TABLE IF EXISTS `herotoclass`;
+CREATE TABLE `herotoclass` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `IdClass` int(10) unsigned NOT NULL,
+  `IdHero` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`Id`),
+  KEY `IdClass` (`IdClass`),
+  KEY `IdHero` (`IdHero`),
+  CONSTRAINT `herotoclass_ibfk_1` FOREIGN KEY (`IdClass`) REFERENCES `classes` (`Id`),
+  CONSTRAINT `herotoclass_ibfk_2` FOREIGN KEY (`IdHero`) REFERENCES `heroes` (`Id`)
+) ENGINE=InnoDB DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `herotouser`
+-- ----------------------------
+DROP TABLE IF EXISTS `herotouser`;
+CREATE TABLE `herotouser` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `IdUser` int(11) unsigned NOT NULL,
+  `IdHero` int(11) unsigned NOT NULL,
+  PRIMARY KEY (`Id`),
+  KEY `IdUser` (`IdUser`),
+  KEY `IdHero` (`IdHero`),
+  CONSTRAINT `herotouser_ibfk_1` FOREIGN KEY (`IdUser`) REFERENCES `users` (`id`),
+  CONSTRAINT `herotouser_ibfk_2` FOREIGN KEY (`IdHero`) REFERENCES `heroes` (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `roles`
+-- ----------------------------
+DROP TABLE IF EXISTS `roles`;
+CREATE TABLE `roles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(30) NOT NULL,
+  `about` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `users`
+-- ----------------------------
+DROP TABLE IF EXISTS `users`;
+CREATE TABLE `users` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `login` varchar(15) NOT NULL,
+  `hash` varchar(40) NOT NULL,
+  `session` varchar(36) NOT NULL DEFAULT '',
+  `roleId` int(10) NOT NULL DEFAULT '2',
+  `game` varchar(36) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `role` (`roleId`),
+  CONSTRAINT `users_ibfk_1` FOREIGN KEY (`roleId`) REFERENCES `roles` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `weapons`
+-- ----------------------------
+DROP TABLE IF EXISTS `weapons`;
+CREATE TABLE `weapons` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(50) NOT NULL DEFAULT '''Неизвестное оружие''',
+  `Damage` varchar(10) NOT NULL DEFAULT '',
+  `DmgType` int(10) unsigned NOT NULL DEFAULT '1',
+  `Type` int(10) unsigned NOT NULL DEFAULT '1',
+  `Cost` int(11) NOT NULL DEFAULT '0',
+  `Weight` int(11) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`Id`),
+  KEY `Type` (`Type`),
+  KEY `DmgType` (`DmgType`),
+  CONSTRAINT `weapons_ibfk_1` FOREIGN KEY (`Type`) REFERENCES `weapontype` (`Id`),
+  CONSTRAINT `weapons_ibfk_2` FOREIGN KEY (`DmgType`) REFERENCES `dmgtype` (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Table structure for `weapontype`
+-- ----------------------------
+DROP TABLE IF EXISTS `weapontype`;
+CREATE TABLE `weapontype` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Name` varchar(30) NOT NULL DEFAULT '',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+--  Records 
+-- ----------------------------
+INSERT INTO `armors` VALUES ('1','\'Простая одежда\'','0','1','1');
+INSERT INTO `armortype` VALUES ('1','\'Неизвестный тип\'');
+INSERT INTO `dmgtype` VALUES ('1','Неизвестный тип');
+INSERT INTO `herotouser` VALUES ('1','2','1');
+INSERT INTO `roles` VALUES ('1','Game Master','Game administrator, all rules'), ('2','Player','Game player, no super rules');
+INSERT INTO `weapons` VALUES ('1','Кулак','1','1','1','0','0');
+INSERT INTO `weapontype` VALUES ('1','Неизвестный тип');
