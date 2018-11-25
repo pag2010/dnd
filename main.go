@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,12 +40,13 @@ type httpError2 struct { //переопределить метод marshal
 }*/
 
 type Context struct {
-	User     *sUser          `json:"-"`
-	Player   *sConnectPlayer `json:"-"`
-	Hero     *sHero          `json:"Hero,omitempty"`
-	Err      *httpError      `json:"error,omitempty"`
-	Response string          `json:"response,omitempty"`
-	Data     string          `json:"data,omitempty"`
+	User         *sUser          `json:"-"`
+	Player       *sConnectPlayer `json:"-"`
+	Hero         *sHero          `json:"Hero,omitempty"`
+	OtherPlayers []*sPlayer      `json:"OtherPlayers,omitempty"`
+	Err          *httpError      `json:"error,omitempty"`
+	Response     string          `json:"response,omitempty"`
+	Data         string          `json:"data,omitempty"`
 }
 
 type sUser struct {
@@ -85,14 +87,17 @@ type sConnectPlayer struct {
 }
 
 type sPlayer struct {
-	Login string
-	Id    int
-	Hero  *sHero
+	Login   string `json:"login"`
+	Id      int    `json:"-"`
+	Hero    *sHero `json:"hero"`
+	Session string `json:"-"`
+	Role    int    `json:"-"`
 }
 
 type sGame struct {
-	Player []sPlayer //сделать map[string]*sPlayer
-	Count  int       //убрать
+	//Player []sPlayer //сделать map[string]*sPlayer
+	Player map[string]*sPlayer
+	//Count  int //убрать
 	sync.RWMutex
 }
 
@@ -163,7 +168,7 @@ type sWeaponDB struct {
 }
 
 type sHero struct { //Главная структура героя. Содержит версию БД и массив оружия
-	HeroDB  *sHeroDB    `json:"hero"`
+	HeroDB  *sHeroDB    `json:"heroInfo"`
 	Weapons []sWeaponDB `json:"weapons,omitemty"`
 }
 
@@ -174,7 +179,12 @@ type HeroToShow struct { //Нужен только для показа спис�
 
 type sGameMap struct {
 	m map[string]sGame
+	//m map[string]sGame
 	sync.RWMutex
+}
+
+type jsHero struct {
+	Hero *sHero `json:"Hero"`
 }
 
 var config sConfig
@@ -215,16 +225,20 @@ func main() {
 	}
 	GameMap.m = make(map[string]sGame)
 	GameSessions = make(map[string]int)
-	//router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
-	router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
+	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
+	//router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
 	router.Subrouter(Context{}, "/").Post("/heroList", (*Context).GetHeroes)
-	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveHero", (*Context).SaveHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveGame", (*Context).SaveGame)
+	//router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveGame", (*Context).SaveGame)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
 	http.Handle("/", router)
@@ -263,6 +277,10 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
+	if _, ok := GameMap.m[c.User.Game]; ok {
+		c.Response = c.User.Game
+		return
+	}
 	session, err := uuid.NewV4()
 	if err != nil {
 		c.SetError(500, "Не удалось создать игру")
@@ -277,14 +295,21 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 
 	var game sGame
-	game.Player = make([]sPlayer, maxCount)
-	game.Player[0].Login = c.User.Login
+	//game.Player = make([]sPlayer, maxCount)
+	game.Player = make(map[string]*sPlayer)
+	game.Player[c.User.Login] = new(sPlayer)
+	game.Player[c.User.Login].Id = c.User.ID
+	game.Player[c.User.Login].Login = c.User.Login
+	game.Player[c.User.Login].Hero = nil
+	game.Player[c.User.Login].Session = c.User.Session
+	game.Player[c.User.Login].Role = c.User.RoleId
+	/*game.Player[0].Login = c.User.Login
 	game.Player[0].Id = c.User.ID
 	game.Player[0].Hero = nil
-	game.Count = 1
+	game.Count = 1*/
 	GameMap.Lock()
 	GameMap.m[session.String()] = game
-	defer GameMap.Unlock()
+	GameMap.Unlock()
 	//GameSessions = append(GameSessions, session.String())
 	GameSessions[session.String()] = 1
 
@@ -300,7 +325,7 @@ func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, n
 	err := buf.Decode(&newPlayer)
 	if err != nil {
 		c.SetError(400, "Невозможно преобразовать тело запроса в json")
-		log.Printf(err.Error())
+		//log.Printf(err.Error())
 		return
 	}
 
@@ -319,32 +344,15 @@ func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, n
 
 func (c *Context) Reconnect(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	gameSession := c.User.Game
-	n := 0
 	if _, ok := GameMap.m[gameSession]; ok {
-		for _, i := range GameMap.m[gameSession].Player {
-			if i.Id == c.User.ID {
-				break
-			}
-			n++
-		}
-		if n <= maxCount {
-			c.Hero = GameMap.m[gameSession].Player[n].Hero
-			c.Response = fmt.Sprintf("%d", n)
-		} else {
-			_, err := Conn.Exec("update users set game=? where id=?", "", c.User.ID)
-			if err != nil {
-				c.SetError(500, "Ошибка БД")
-				return
-			}
-			c.SetError(403, "Невозможно переподключиться к игровой сессии")
-		}
+		fmt.Println("Беру данные из map")
+		c.Hero = GameMap.m[gameSession].Player[c.User.Login].Hero
 		return
 	} else {
-		//log.Println("Будем подключаться к новой сессии")
+		fmt.Println("Беру из БД")
 		next(iWrt, iReq)
 		return
 	}
-	return
 }
 
 func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
@@ -359,7 +367,7 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
-	if GameMap.m[gameSession].Count == maxCount {
+	if len(GameMap.m[gameSession].Player) == maxCount {
 		c.SetError(403, "Подключиться к сессии не удалось. Сессия заполнена")
 		return
 	}
@@ -373,28 +381,30 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 	var Player sPlayer
 	Player.Login = c.User.Login
 	Player.Id = c.User.ID
-
+	Player.Session = c.User.Session
 	Player.Hero = c.Hero
+	Player.Role = c.User.RoleId
 	if game, ok := GameMap.m[gameSession]; ok {
 		_, err := Conn.Exec("update users set game=? where id=?", gameSession, c.User.ID)
 		if err != nil {
 			c.SetError(500, "Невозможно подключиться к игровой сессии")
 			return
 		}
-		n := 1
+		/*n := 1
 		for ; n < len(game.Player); n++ {
 			if game.Player[n].Hero == nil {
 				break
 			}
-		}
-		game.Count++
+		}*/
+		game.Player[Player.Login] = &Player
+		//game.Count++
 		//game.Player = append(game.Player, Player)
-		game.Player[n] = Player
+		//game.Player[n] = Player
 		GameMap.m[gameSession] = game
-		if GameMap.m[gameSession].Count == maxCount {
+		if len(GameMap.m[gameSession].Player) == maxCount {
 			delete(GameSessions, gameSession) // проще пробежать по всей map
 		}
-		c.Response = fmt.Sprintf("%d", n)
+		//c.Response = fmt.Sprintf("%d", n)
 		/*for _, i := range GameMap[session].Player {
 			fmt.Println(i.PlayerInfo.Login)
 		}*/
@@ -410,28 +420,24 @@ func (c *Context) Disconnect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(403, "Отключиться может только игрок")
 		return
 	}
-	n := 0
+	//	n := 0
 	GameMap.Lock()
 	defer GameMap.Unlock()
-	gameSession := c.User.Game
+	//	gameSession := c.User.Game
 	if _, ok := GameMap.m[c.User.Game]; ok {
 		_, err := Conn.Exec("Update users set game = '' where id=?", c.User.ID)
 		if err != nil {
 			c.SetError(500, "Ошибка при удалении игры")
 			return
 		}
-		for _, i := range GameMap.m[gameSession].Player {
+		/*for _, i := range GameMap.m[gameSession].Player {
 			if i.Id == c.User.ID {
 				break
 			}
 			n++
-		}
-		game := GameMap.m[c.User.Game]
-		game.Player[n].Hero = nil
-		game.Player[n].Id = 0
-		game.Player[n].Login = ""
-		game.Count--
-		GameMap.m[c.User.Game] = game
+		}*/
+		//game := GameMap.m[c.User.Game]
+		delete(GameMap.m[c.User.Game].Player, c.User.Login)
 		c.Response = "true"
 	} else {
 		c.SetError(404, "Игра не обнаружена")
@@ -520,24 +526,32 @@ func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 }
 
-func BoolToInt(b bool) byte {
-	if b {
-		return byte(1)
-	}
-	return byte(0)
-}
-
 func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
-	if c.User.RoleId != 2 {
+	/*if c.User.RoleId != 2 {
 		c.SetError(403, "Сохранить героя может только игрок")
 		return
-	}
+	}*/
 	if game, ok := GameMap.m[c.User.Game]; ok {
-		if game.Player[c.Player.PlayerId].Id == c.User.ID {
-			h := game.Player[c.Player.PlayerId].Hero.HeroDB
-			_, err := Conn.Exec("update heroes set Exp=100, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
+		//if game.Player[c.Player.PlayerId].Id == c.User.ID {
+		//h := game.Player[c.Player.PlayerId].Hero.HeroDB
+		if p, ok := game.Player[c.User.Login]; ok {
+			if p.Hero == nil {
+				c.SetError(404, "Герой не найден")
+				return
+			}
+			if p.Hero == nil {
+				c.SetError(404, "Герой не найден")
+				return
+			}
+			if p.Role != 2 {
+				c.SetError(403, "Сохранить героя может только игрок")
+				return
+			}
+			h := p.Hero.HeroDB
+			_, err := Conn.Exec("update heroes set Exp=?, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Exp, h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
 			if err != nil {
 				c.SetError(500, "Невозможно сохранить героя")
+				fmt.Println(err.Error())
 				return
 			}
 			c.Response = "true"
@@ -554,11 +568,15 @@ func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
 }
 
 func (c *Context) SaveGame(iWrt web.ResponseWriter, iReq *web.Request) {
-	if c.User.RoleId != 1 {
+	/*if c.User.RoleId != 1 {
 		c.SetError(403, "Сохранить игру может только мастер")
 		return
-	}
+	}*/
 	if game, ok := GameMap.m[c.User.Game]; ok {
+		if game.Player[c.User.Login].Role != 1 {
+			c.SetError(403, "Сохранить игру может только мастер")
+			return
+		}
 		var e error
 		tx, err := Conn.Begin()
 		if err != nil {
@@ -568,7 +586,7 @@ func (c *Context) SaveGame(iWrt web.ResponseWriter, iReq *web.Request) {
 		for _, i := range game.Player {
 			if i.Hero != nil {
 				h := i.Hero.HeroDB
-				_, err := tx.Exec("update heroes set Exp=100, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
+				_, err := tx.Exec("update heroes set Exp=?, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Exp, h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
 				if err != nil {
 					e = err
 				}
@@ -668,6 +686,11 @@ func (c *Context) Auth(iWrt web.ResponseWriter, iReq *web.Request) {
 			log.Printf(err.Error())
 			return
 		}
+		if game, ok := GameMap.m[user.Game]; ok { //обновление сессии в игровой карте, если эта игра и игрок там присутствуют
+			if pl, ok := game.Player[user.Login]; ok {
+				pl.Session = session.String()
+			}
+		}
 		c.Response = user.Session
 		if err != nil {
 			c.SetError(500, "Невозможно преобразовать ответ в json")
@@ -685,14 +708,14 @@ func (c *Context) ErrorHandler(iWrt web.ResponseWriter, iReq *web.Request, next 
 	next(iWrt, iReq)
 	if c.Err != nil {
 		iWrt.WriteHeader(c.Err.Code)
-		lData, err := json.Marshal(c.Err) //добавить структуру
+		lData, err := json.Marshal(c.Err)
 		if err != nil {
 			iWrt.WriteHeader(500)
 			fmt.Fprintln(iWrt, "")
 		}
 		fmt.Fprintln(iWrt, string(lData))
 	} else {
-		lData, err := json.Marshal(c) //добавить структуру
+		lData, err := json.Marshal(c)
 		if err != nil {
 			iWrt.WriteHeader(500)
 			fmt.Fprintln(iWrt, "")
@@ -721,6 +744,72 @@ func (c *Context) Logger(iWrt web.ResponseWriter, iReq *web.Request, next web.Ne
 		return
 	}
 	fmt.Printf("[ %s ] %d %s\n", time.Since(t), 200, iReq.URL)
+}
+
+func (c *Context) GetOtherPlayers(iWrt web.ResponseWriter, iReq *web.Request) {
+	if GameMap.m[c.User.Game].Player[c.User.Login].Role != 1 {
+		c.SetError(403, "Доступ только у ГМ")
+		return
+	}
+	for _, i := range GameMap.m[c.User.Game].Player {
+		c.OtherPlayers = append(c.OtherPlayers, i)
+	}
+}
+
+func (c *Context) ParseGet(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	iReq.ParseForm()
+	game := iReq.PathParams["game"]
+	login := iReq.Form["login"]
+	session := iReq.Form["session"]
+	c.User = new(sUser)
+	c.User.Login = strings.Join(login, "")
+	c.User.Session = strings.Join(session, "")
+	c.User.Game = game
+	next(iWrt, iReq)
+}
+
+func (c *Context) ParsePatch(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	buf := json.NewDecoder(iReq.Body)
+	defer iReq.Body.Close()
+	var Herojson jsHero
+	err := buf.Decode(&Herojson)
+	if err != nil {
+		c.SetError(400, "Невозможно преобразовать тело запроса в json")
+		return
+	}
+	c.Hero = Herojson.Hero
+	next(iWrt, iReq)
+}
+
+func (c *Context) CheckPlayerSession(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if pl, ok := game.Player[c.User.Login]; ok {
+			if c.User.Session == pl.Session {
+				//c.Response = "Сессии одинаковые"
+				next(iWrt, iReq)
+				return
+			} else {
+				c.SetError(403, "Сессии разные")
+				return
+			}
+		} else {
+			c.SetError(404, "Игрок не найден")
+			return
+		}
+	} else {
+		c.SetError(404, "Игра не найдена")
+		return
+	}
+}
+
+func (c *Context) GetHero(iWrt web.ResponseWriter, iReq *web.Request) {
+	c.Hero = GameMap.m[c.User.Game].Player[c.User.Login].Hero
+}
+
+func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request) {
+	GameMap.m[c.User.Game].Player[c.User.Login].Hero = c.Hero
+	c.Hero = nil
+	c.Response = "true"
 }
 
 func InstallDB() error {
