@@ -47,6 +47,11 @@ type Context struct {
 	Err          *httpError      `json:"error,omitempty"`
 	Response     string          `json:"response,omitempty"`
 	Data         string          `json:"data,omitempty"`
+	Game         string          `json:"game,omitempty"`
+	Role         int             `json:"role,omitempty"`
+	Session      string          `json:"session,omitempty"`
+	Manual       *sManual        `json:"manual,omitempty"`
+	HeroList     []HeroToShow    `json:"heroes,omitempty"`
 }
 
 type sUser struct {
@@ -158,13 +163,13 @@ type sHeroDB struct {
 }
 
 type sWeaponDB struct {
-	Id         int    `db:"Id" json:""`
-	Name       string `db:"Name" json:""`
-	Damage     string `db:"Damage" json:""`
-	DmgType    string `db:"DmgType" json:""`
-	WeaponType string `db:"WeaponType" json:""`
-	Cost       int    `db:"Cost" json:""`
-	Weight     int    `db:"Weight" json:""`
+	Id         int    `db:"Id" json:"id"`
+	Name       string `db:"Name" json:"name"`
+	Damage     string `db:"Damage" json:"damage"`
+	DmgType    int    `db:"DmgType" json:"dmgtype"`
+	WeaponType int    `db:"Type" json:"type"`
+	Cost       int    `db:"Cost" json:"cost"`
+	Weight     int    `db:"Weight" json:"weight"`
 }
 
 type sHero struct { //Главная структура героя. Содержит версию БД и массив оружия
@@ -185,6 +190,16 @@ type sGameMap struct {
 
 type jsHero struct {
 	Hero *sHero `json:"Hero"`
+}
+
+type sManual struct {
+	Roles   []sRoles    `json:"roles,omitemty"`
+	Weapons []sWeaponDB `json:"weapons,omitemty"`
+}
+type sRoles struct {
+	Id    int    `db:"id" json:"id"`
+	Name  string `db:"name" json:"name"`
+	About string `db:"about" json:"about"`
 }
 
 var config sConfig
@@ -227,18 +242,19 @@ func main() {
 	GameSessions = make(map[string]int)
 	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
 	//router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
+	router.Subrouter(Context{}, "/").Post("/ping", (*Context).Ping)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
-	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
-	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
-	router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
-	router.Subrouter(Context{}, "/").Post("/heroList", (*Context).GetHeroes)
-	//router.Subrouter(Context{}, "/").Middleware((*Context).CheckUserSession).Post("/SaveGame", (*Context).SaveGame)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGet).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
+	router.Subrouter(Context{}, "/").Get("/manual", (*Context).GetManual)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Get("/heroList", (*Context).GetHeroes)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
 	http.Handle("/", router)
@@ -317,7 +333,7 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	return
 }
 
-func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+func (c *Context) ParsePost(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	buf := json.NewDecoder(iReq.Body)
 	defer iReq.Body.Close()
 
@@ -328,16 +344,33 @@ func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, n
 		//log.Printf(err.Error())
 		return
 	}
+	c.Player = &newPlayer
+	next(iWrt, iReq)
+}
+
+func (c *Context) CheckUserSession(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	/*buf := json.NewDecoder(iReq.Body)
+	defer iReq.Body.Close()
+
+	var newPlayer sConnectPlayer
+	err := buf.Decode(&newPlayer)
+	if err != nil {
+		c.SetError(400, "Невозможно преобразовать тело запроса в json")
+		//log.Printf(err.Error())
+		return
+	}*/
 
 	user := []sUser{}
-	err = Conn.Select(&user, "select * from users where login=? and session=?", newPlayer.PlayerInfo.Login, newPlayer.PlayerInfo.Session)
-
+	err := Conn.Select(&user, "select * from users where login=? and session=?", c.Player.PlayerInfo.Login, c.Player.PlayerInfo.Session)
+	if err != nil {
+		c.SetError(500, "Ошибка БД")
+	}
 	if len(user) != 1 {
 		c.SetError(401, "Неверный логин или ключ сессии. Нужна повторная авторизация")
 		return
 	}
 	c.User = &user[0]
-	c.Player = &newPlayer
+	//c.Player = &newPlayer
 	next(iWrt, iReq)
 	return
 }
@@ -347,9 +380,14 @@ func (c *Context) Reconnect(iWrt web.ResponseWriter, iReq *web.Request, next web
 	if _, ok := GameMap.m[gameSession]; ok {
 		fmt.Println("Беру данные из map")
 		c.Hero = GameMap.m[gameSession].Player[c.User.Login].Hero
+		c.Game = gameSession
 		return
 	} else {
-		fmt.Println("Беру из БД")
+		if c.Player.Game == "" && c.Player.Hero == 0 {
+			c.SetError(404, "Не удалось подключиться к последней игре")
+			return
+		}
+		fmt.Println("Не удалось переподключиться")
 		next(iWrt, iReq)
 		return
 	}
@@ -372,10 +410,6 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 		return
 	}
 
-	/*if c.Err != nil {
-		return
-	}*/
-
 	GameMap.Lock()
 	defer GameMap.Unlock()
 	var Player sPlayer
@@ -390,24 +424,12 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 			c.SetError(500, "Невозможно подключиться к игровой сессии")
 			return
 		}
-		/*n := 1
-		for ; n < len(game.Player); n++ {
-			if game.Player[n].Hero == nil {
-				break
-			}
-		}*/
+
 		game.Player[Player.Login] = &Player
-		//game.Count++
-		//game.Player = append(game.Player, Player)
-		//game.Player[n] = Player
 		GameMap.m[gameSession] = game
 		if len(GameMap.m[gameSession].Player) == maxCount {
 			delete(GameSessions, gameSession) // проще пробежать по всей map
 		}
-		//c.Response = fmt.Sprintf("%d", n)
-		/*for _, i := range GameMap[session].Player {
-			fmt.Println(i.PlayerInfo.Login)
-		}*/
 		return
 	} else {
 		c.SetError(404, "Игровая сессия не найдена")
@@ -450,25 +472,23 @@ func (c *Context) Disconnect(iWrt web.ResponseWriter, iReq *web.Request) {
 }
 
 func (c *Context) GetHeroes(iWrt web.ResponseWriter, iReq *web.Request) {
-	list := make([]HeroToShow, 0, 0)
-	LoadHeroList(2, &list)
+	fmt.Println(c.User.Login)
+	c.HeroList = make([]HeroToShow, 0)
+	c.LoadHeroList(2)
+	fmt.Println(c.HeroList[0])
 	return
 }
 
-func LoadHeroList(idUser int, h *[]HeroToShow) (err error) {
-	h = nil
+func (c *Context) LoadHeroList(idUser int) (err error) {
+	//h = nil
+	//k := new([]HeroToShow)
 	heroes := []HeroToShow{}
 	err = Conn.Select(&heroes, "select heroes.id, name from herotouser inner join heroes on idhero = heroes.id where iduser = ?", idUser)
 	if err != nil {
 		log.Println(err.Error())
 		return err
 	}
-	buf, err := json.Marshal(heroes)
-	if err != nil {
-		return err
-	}
-	log.Println(string(buf))
-	h = &heroes
+	c.HeroList = heroes
 	return nil
 }
 
@@ -691,7 +711,9 @@ func (c *Context) Auth(iWrt web.ResponseWriter, iReq *web.Request) {
 				pl.Session = session.String()
 			}
 		}
-		c.Response = user.Session
+		//c.Response = user.Session
+		c.Session = user.Session
+		c.Role = user.RoleId
 		if err != nil {
 			c.SetError(500, "Невозможно преобразовать ответ в json")
 			log.Printf(err.Error())
@@ -756,7 +778,7 @@ func (c *Context) GetOtherPlayers(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 }
 
-func (c *Context) ParseGet(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+func (c *Context) ParseGetgls(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) { //:game login session
 	iReq.ParseForm()
 	game := iReq.PathParams["game"]
 	login := iReq.Form["login"]
@@ -765,6 +787,16 @@ func (c *Context) ParseGet(iWrt web.ResponseWriter, iReq *web.Request, next web.
 	c.User.Login = strings.Join(login, "")
 	c.User.Session = strings.Join(session, "")
 	c.User.Game = game
+	next(iWrt, iReq)
+}
+
+func (c *Context) ParseGetls(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) { //login session
+	iReq.ParseForm()
+	login := iReq.Form["login"]
+	session := iReq.Form["session"]
+	c.User = new(sUser)
+	c.User.Login = strings.Join(login, "")
+	c.User.Session = strings.Join(session, "")
 	next(iWrt, iReq)
 }
 
@@ -810,6 +842,29 @@ func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request) {
 	GameMap.m[c.User.Game].Player[c.User.Login].Hero = c.Hero
 	c.Hero = nil
 	c.Response = "true"
+}
+
+func (c *Context) GetManual(iWrt web.ResponseWriter, iReq *web.Request) {
+	weapons := []sWeaponDB{}
+	err := Conn.Select(&weapons, "SELECT * from weapons")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника ОРУЖИЕ")
+		return
+	}
+	c.Manual = new(sManual)
+	c.Manual.Weapons = weapons
+
+	roles := []sRoles{}
+	err = Conn.Select(&roles, "SELECT * from roles")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника РОЛИ")
+		return
+	}
+	c.Manual.Roles = roles
+}
+
+func (c *Context) Ping(iWrt web.ResponseWriter, iReq *web.Request) {
+	c.Response = "Alive"
 }
 
 func InstallDB() error {
