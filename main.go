@@ -52,6 +52,7 @@ type Context struct {
 	Session      string          `json:"session,omitempty"`
 	Manual       *sManual        `json:"manual,omitempty"`
 	HeroList     []HeroToShow    `json:"heroes,omitempty"`
+	GameSessions map[string]int  `json:"games,omitempty"`
 }
 
 type sUser struct {
@@ -249,7 +250,8 @@ func main() {
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Get("/heroList", (*Context).GetHeroes)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/heroList", (*Context).GetHeroes)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/games", (*Context).GetAvaliableGames)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
@@ -427,6 +429,7 @@ func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
 
 		game.Player[Player.Login] = &Player
 		GameMap.m[gameSession] = game
+		GameSessions[gameSession]++
 		if len(GameMap.m[gameSession].Player) == maxCount {
 			delete(GameSessions, gameSession) // проще пробежать по всей map
 		}
@@ -442,23 +445,15 @@ func (c *Context) Disconnect(iWrt web.ResponseWriter, iReq *web.Request) {
 		c.SetError(403, "Отключиться может только игрок")
 		return
 	}
-	//	n := 0
 	GameMap.Lock()
 	defer GameMap.Unlock()
-	//	gameSession := c.User.Game
 	if _, ok := GameMap.m[c.User.Game]; ok {
 		_, err := Conn.Exec("Update users set game = '' where id=?", c.User.ID)
 		if err != nil {
 			c.SetError(500, "Ошибка при удалении игры")
 			return
 		}
-		/*for _, i := range GameMap.m[gameSession].Player {
-			if i.Id == c.User.ID {
-				break
-			}
-			n++
-		}*/
-		//game := GameMap.m[c.User.Game]
+		GameSessions[c.User.Game]--
 		delete(GameMap.m[c.User.Game].Player, c.User.Login)
 		c.Response = "true"
 	} else {
@@ -794,9 +789,9 @@ func (c *Context) ParseGetls(iWrt web.ResponseWriter, iReq *web.Request, next we
 	iReq.ParseForm()
 	login := iReq.Form["login"]
 	session := iReq.Form["session"]
-	c.User = new(sUser)
-	c.User.Login = strings.Join(login, "")
-	c.User.Session = strings.Join(session, "")
+	c.Player = new(sConnectPlayer)
+	c.Player.PlayerInfo.Login = strings.Join(login, "")
+	c.Player.PlayerInfo.Session = strings.Join(session, "")
 	next(iWrt, iReq)
 }
 
@@ -865,6 +860,10 @@ func (c *Context) GetManual(iWrt web.ResponseWriter, iReq *web.Request) {
 
 func (c *Context) Ping(iWrt web.ResponseWriter, iReq *web.Request) {
 	c.Response = "Alive"
+}
+
+func (c *Context) GetAvaliableGames(iWrt web.ResponseWriter, iReq *web.Request) {
+	c.GameSessions = GameSessions
 }
 
 func InstallDB() error {
