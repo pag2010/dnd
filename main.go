@@ -299,6 +299,7 @@ func main() {
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/heroList", (*Context).GetHeroes)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/games", (*Context).GetAvaliableGames)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Middleware((*Context).ParsePatch).Post("/newHero", (*Context).NewHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
@@ -343,7 +344,7 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 
 	if _, ok := GameMap.m[c.User.Game]; ok {
-		c.Response = c.User.Game
+		c.Game = c.User.Game
 		return
 	}
 	session, err := uuid.NewV4()
@@ -942,6 +943,15 @@ func (c *Context) Ping(iWrt web.ResponseWriter, iReq *web.Request) {
 
 func (c *Context) GetAvaliableGames(iWrt web.ResponseWriter, iReq *web.Request) {
 	c.GameSessions = GameSessions
+}
+
+func (c *Context) NewHero(iWrt web.ResponseWriter, iReq *web.Request) { //TODO Добавить HeroToUser
+	_, err := Conn.Exec("Insert into heroes (Name, Prehistory, Exp, Speed, HP, HPmax, HitBonesMax, HitBones, Strength, Perception, Endurance, Charisma, Intelligence, Agility, MasterBonus, DeathSavingThrowGood, DeathSavingThrowBad, TemporaryHP, AC, Initiative, PassiveAttention, Inspiration, Ammo, Languages, SavingThrowS, SavingThrowP, SavingThrowE, SavingThrowC, SavingThrowI, SavingThrowA, Athletics, Acrobatics, Juggle, Stealth, Magic, History, Analysis, Nature, Religion, AnimalCare, Insight, Medicine, Attention, Survival, Deception, Intimidation, Performance, Conviction, WeaponFirstId, WeaponSecondId, ArmorId, ShieldId) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", c.Hero.HeroDB.Name, c.Hero.HeroDB.Prehistory, c.Hero.HeroDB.Exp, c.Hero.HeroDB.Speed, c.Hero.HeroDB.HP, c.Hero.HeroDB.HPmax, c.Hero.HeroDB.HitBonesMax, c.Hero.HeroDB.HitBones, c.Hero.HeroDB.Strength, c.Hero.HeroDB.Perception, c.Hero.HeroDB.Endurance, c.Hero.HeroDB.Charisma, c.Hero.HeroDB.Intelligence, c.Hero.HeroDB.Agility, c.Hero.HeroDB.MasterBonus, c.Hero.HeroDB.DeathSavingThrowGood, c.Hero.HeroDB.DeathSavingThrowBad, c.Hero.HeroDB.TemporaryHP, c.Hero.HeroDB.AC, c.Hero.HeroDB.Initiative, c.Hero.HeroDB.PassiveAttention, c.Hero.HeroDB.Inspiration, c.Hero.HeroDB.Ammo, c.Hero.HeroDB.Languages, c.Hero.HeroDB.SavingThrowS, c.Hero.HeroDB.SavingThrowP, c.Hero.HeroDB.SavingThrowE, c.Hero.HeroDB.SavingThrowC, c.Hero.HeroDB.SavingThrowI, c.Hero.HeroDB.SavingThrowA, c.Hero.HeroDB.Athletics, c.Hero.HeroDB.Acrobatics, c.Hero.HeroDB.Juggle, c.Hero.HeroDB.Stealth, c.Hero.HeroDB.Magic, c.Hero.HeroDB.History, c.Hero.HeroDB.Analysis, c.Hero.HeroDB.Nature, c.Hero.HeroDB.Religion, c.Hero.HeroDB.AnimalCare, c.Hero.HeroDB.Insight, c.Hero.HeroDB.Medicine, c.Hero.HeroDB.Attention, c.Hero.HeroDB.Survival, c.Hero.HeroDB.Deception, c.Hero.HeroDB.Intimidation, c.Hero.HeroDB.Performance, c.Hero.HeroDB.Conviction, c.Hero.HeroDB.WeaponFirstId, c.Hero.HeroDB.WeaponSecondId, c.Hero.HeroDB.ArmorId, c.Hero.HeroDB.ShieldId)
+	if err != nil {
+		fmt.Println(err.Error())
+		c.SetError(500, "Невозможно добавить героя в БД")
+	}
+	c.Response = "true"
 }
 
 func InstallDB() error {
