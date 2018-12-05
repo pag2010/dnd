@@ -163,7 +163,7 @@ type sHeroDB struct {
 	ShieldId             int    `db:"ShieldId"`
 }
 
-type sWeaponDB struct {
+type sWeaponDBfull struct {
 	Id         int    `db:"Id" json:"id"`
 	Name       string `db:"Name" json:"name"`
 	Damage     string `db:"Damage" json:"damage"`
@@ -171,6 +171,16 @@ type sWeaponDB struct {
 	WeaponType int    `db:"Type" json:"type"`
 	Cost       int    `db:"Cost" json:"cost"`
 	Weight     int    `db:"Weight" json:"weight"`
+}
+
+type sWeaponDB struct {
+	Id int `db:"Id" json:"id"`
+	/*Name       string `db:"Name" json:"name"`
+	Damage     string `db:"Damage" json:"damage"`
+	DmgType    int    `db:"DmgType" json:"dmgtype"`
+	WeaponType int    `db:"Type" json:"type"`
+	Cost       int    `db:"Cost" json:"cost"`
+	Weight     int    `db:"Weight" json:"weight"`*/
 }
 
 type sHero struct { //Главная структура героя. Содержит версию БД и массив оружия
@@ -194,13 +204,50 @@ type jsHero struct {
 }
 
 type sManual struct {
-	Roles   []sRoles    `json:"roles,omitemty"`
-	Weapons []sWeaponDB `json:"weapons,omitemty"`
+	Roles       []sRoles        `json:"roles,omitemty"`
+	Weapons     []sWeaponDBfull `json:"weapons,omitemty"`
+	DmgTypes    []sDmgType      `json:"dmgtype,omitemty"`
+	WeaponTypes []sWeaponType   `json:"weapontypes,omitemty"`
+	Classes     []sClass        `json:"classes,omitemty"`
+	Armors      []sArmor        `json:"armor,omitemty"`
+	ArmorTypes  []sArmorType    `json:"armortype,omitemty"`
 }
+
+type sDmgType struct {
+	Id   int    `db:"Id" json:"id"`
+	Name string `db:"Name" json:"name"`
+}
+
+type sWeaponType struct {
+	Id   int    `db:"Id" json:"id"`
+	Name string `db:"Name" json:"name"`
+}
+
+type sClass struct {
+	Id      int    `db:"Id" json:"id"`
+	Name    string `db:"Name" json:"name"`
+	About   string `db:"About" json:"about"`
+	BoneHit string `db:"BoneHit" json:"bonehit"`
+}
+
 type sRoles struct {
 	Id    int    `db:"id" json:"id"`
 	Name  string `db:"name" json:"name"`
 	About string `db:"about" json:"about"`
+}
+
+type sArmor struct {
+	Id     int    `db:"Id" json:"id"`
+	Name   string `db:"Name" json:"name"`
+	AC     int    `db:"AC" json:"ac"`
+	Type   int    `db:"Type" json:"type"`
+	Cost   int    `db:"Cost" json:"cost"`
+	Weight int    `db:"Weight" json:"weight"`
+}
+
+type sArmorType struct {
+	Id   int    `db:"Id" json:"id"`
+	Name string `db:"Name" json:"name"`
 }
 
 var config sConfig
@@ -321,17 +368,14 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	game.Player[c.User.Login].Hero = nil
 	game.Player[c.User.Login].Session = c.User.Session
 	game.Player[c.User.Login].Role = c.User.RoleId
-	/*game.Player[0].Login = c.User.Login
-	game.Player[0].Id = c.User.ID
-	game.Player[0].Hero = nil
-	game.Count = 1*/
+
 	GameMap.Lock()
 	GameMap.m[session.String()] = game
 	GameMap.Unlock()
 	//GameSessions = append(GameSessions, session.String())
 	GameSessions[session.String()] = 1
 
-	c.Response = session.String()
+	c.Game = session.String()
 	return
 }
 
@@ -499,20 +543,27 @@ func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.
 		return
 	}
 	c.Hero = new(sHero)
-	//c.Hero.Weapons = make([]sWeaponDB, 2)
 	c.Hero.HeroDB = &hero[0]
 	c.Hero.LoadWeapons()
 	next(iWrt, iReq)
 }
 
 func (h *sHero) LoadWeapons() error {
-	h.Weapons = make([]sWeaponDB, 2)
+	//h.Weapons = make([]sWeaponDB, 2)
 	weapons := []sWeaponDB{}
-	err := Conn.Select(&weapons, "SELECT weapons.Id, weapons.Name, weapons.Damage, dmgtype.name as 'DmgType', weapontype.Name as 'WeaponType', weapons.Cost, weapons.Weight from weapons inner join dmgtype on weapons.dmgtype = dmgtype.id inner join weapontype on weapons.Type= weapontype.id where weapons.Id = ? and weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
+	//err := Conn.Select(&weapons, "SELECT weapons.Id, weapons.Name, weapons.Damage, dmgtype.name as 'DmgType', weapontype.Name as 'WeaponType', weapons.Cost, weapons.Weight from weapons inner join dmgtype on weapons.dmgtype = dmgtype.id inner join weapontype on weapons.Type= weapontype.id where weapons.Id = ? and weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
+	/*err := Conn.Select(&weapons, "SELECT id from weapons where weapons.Id = ? or weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
+	if err != nil {
+		return err
+	}*/
+	//h.Weapons = weapons
+	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id' from HeroToWeapons where HeroId = ?", h.HeroDB.Id)
+	fmt.Println(h.HeroDB.Id)
 	if err != nil {
 		return err
 	}
 	h.Weapons = weapons
+	//h.Weapons = append(h.Weapons, weapons...)
 	return nil
 }
 
@@ -840,22 +891,49 @@ func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request) {
 }
 
 func (c *Context) GetManual(iWrt web.ResponseWriter, iReq *web.Request) {
-	weapons := []sWeaponDB{}
-	err := Conn.Select(&weapons, "SELECT * from weapons")
+	c.Manual = new(sManual)
+	err := Conn.Select(&c.Manual.Weapons, "SELECT * from weapons")
 	if err != nil {
 		c.SetError(500, "Ошибка загрузки справочника ОРУЖИЕ")
 		return
 	}
-	c.Manual = new(sManual)
-	c.Manual.Weapons = weapons
 
-	roles := []sRoles{}
-	err = Conn.Select(&roles, "SELECT * from roles")
+	err = Conn.Select(&c.Manual.Roles, "SELECT * from roles")
 	if err != nil {
 		c.SetError(500, "Ошибка загрузки справочника РОЛИ")
 		return
 	}
-	c.Manual.Roles = roles
+
+	err = Conn.Select(&c.Manual.DmgTypes, "SELECT * from dmgtype")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника ТИП УРОНА")
+		return
+	}
+
+	err = Conn.Select(&c.Manual.WeaponTypes, "SELECT * from weapontype")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника ТИП ОРУЖИЯ")
+		return
+	}
+
+	err = Conn.Select(&c.Manual.Classes, "SELECT * from classes")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника КЛАССЫ")
+		return
+	}
+
+	err = Conn.Select(&c.Manual.ArmorTypes, "SELECT * from armortype")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника ТИП БРОНИ")
+		return
+	}
+
+	err = Conn.Select(&c.Manual.Armors, "SELECT * from armors")
+	if err != nil {
+		c.SetError(500, "Ошибка загрузки справочника БРОНЯ")
+		return
+	}
+
 }
 
 func (c *Context) Ping(iWrt web.ResponseWriter, iReq *web.Request) {
