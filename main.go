@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -296,7 +297,7 @@ func main() {
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Get("/manual", (*Context).GetManual)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePatch).Patch("/sw", (*Context).SaveWeapons)
+	//router.Subrouter(Context{}, "/").Middleware((*Context).ParsePatch).Patch("/sw", (*Context).SaveWeapons)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
@@ -305,8 +306,10 @@ func main() {
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Middleware((*Context).ParsePatch).Post("/newHero", (*Context).NewHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
+	//router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Middleware((*Context).UpdateHero).Patch("/:game/Hero", (*Context).Empty)
+	//router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Middleware((*Context).UpdateHero).Patch("/:game/SaveHero", (*Context).SaveHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
 
 	fmt.Println("Запускаемся. Слушаем порт 8080")
@@ -444,6 +447,7 @@ func (c *Context) Reconnect(iWrt web.ResponseWriter, iReq *web.Request, next web
 }
 
 func (c *Context) Connect(iWrt web.ResponseWriter, iReq *web.Request) {
+	fmt.Println("CONNECT")
 	if c.User.RoleId != 2 {
 		c.SetError(403, "Подключиться к сессии может только player")
 		return
@@ -536,6 +540,7 @@ func (c *Context) LoadHeroList(idUser int) (err error) {
 }
 
 func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	fmt.Println("LOAD HERO")
 	hero := []sHeroDB{}
 	//err := Conn.Select(&hero, "select * from Heroes where id=?", c.Player.Hero)
 	err := Conn.Select(&hero, "select heroes.* from heroes inner join herotouser on heroes.id=herotouser.IdHero where herotouser.IdUser = ? and herotouser.IdHero=?", c.User.ID, c.Player.Hero)
@@ -564,7 +569,7 @@ func (h *sHero) LoadWeapons() error {
 	}*/
 	//h.Weapons = weapons
 	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id', CountW from HeroToWeapons where HeroId = ?", h.HeroDB.Id) //kek
-	fmt.Println(weapons[0].Id)
+	//fmt.Println(weapons[0].Id)
 	if err != nil {
 		return err
 	}
@@ -573,15 +578,20 @@ func (h *sHero) LoadWeapons() error {
 	return nil
 }
 
-func (c *Context) SaveWeapons(iWrt web.ResponseWriter, iReq *web.Request) {
+func SaveWeapons(h *sHero) error {
+	if h == nil {
+		//c.SetError(406, "Герой nil")
+		return errors.New("Герой пустой!")
+	}
 	weapons := []sWeaponDB{}
 	//c.Hero.Weapons = append(c.Hero.Weapons, sWeaponDB{1, 1})
-	err := Conn.Select(&weapons, "Select weaponid as 'Id', CountW from herotoweapons where heroid=?", c.Hero.HeroDB.Id)
+	err := Conn.Select(&weapons, "Select weaponid as 'Id', CountW from herotoweapons where heroid=?", h.HeroDB.Id)
 	if err != nil {
 		fmt.Println(err.Error())
-		c.SetError(500, "Невозможно получить список оружия героя из БД")
-		return
+		//c.SetError(500, "Невозможно получить список оружия героя из БД")
+		return err
 	}
+	fmt.Println("**** Обработка оружия началась ****")
 	oldw := make(map[int]int)
 	neww := make(map[int]int)
 	delm := []int{}
@@ -589,16 +599,17 @@ func (c *Context) SaveWeapons(iWrt web.ResponseWriter, iReq *web.Request) {
 	updw := []sWeaponDB{}
 	insw := []sWeaponDB{}
 	var w sWeaponDB
-	if c.Hero == nil {
-		c.SetError(406, "Оружие героя nil")
-		return
-	}
+
 	for _, i := range weapons {
 		oldw[i.Id] = i.Count
 	}
-	for _, i := range c.Hero.Weapons {
+	for _, i := range h.Weapons {
 		neww[i.Id] = i.Count
 	}
+
+	fmt.Printf("Old %+v\n", oldw)
+	fmt.Printf("New %+v\n", neww)
+
 	for id, count := range neww {
 		if c, ok := oldw[id]; ok {
 			if c != count {
@@ -619,11 +630,51 @@ func (c *Context) SaveWeapons(iWrt web.ResponseWriter, iReq *web.Request) {
 		}
 	}
 
+	var e error
+	//tx, err := Conn.Begin()
+	if err != nil {
+		//c.SetError(500, "Невозможно начать транзакцию с БД")
+		return err
+	}
+	for _, i := range updw {
+		_, err := Conn.Exec("update herotoweapons set CountW=? where heroid=? and weaponid=?", i.Count, h.HeroDB.Id, i.Id)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	for _, i := range insw {
+		_, err := Conn.Exec("insert into herotoweapons (heroid, weaponid, countw) values (?, ?, ?)", h.HeroDB.Id, i.Id, i.Count)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	for _, i := range delm {
+		_, err := Conn.Exec("delete from herotoweapons where heroid=? and weaponid=?", h.HeroDB.Id, i)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	if e != nil {
+		fmt.Println(e.Error())
+		//c.SetError(500, "Невозможно сохранить игру")
+		//tx.Rollback()
+		return e
+	}
+
+	//tx.Commit()
+
 	fmt.Printf("Update %+v\n", updw)
 	fmt.Printf("Insert %+v\n", insw)
 	fmt.Printf("Delete %+v\n", delm)
 
-	return
+	fmt.Println("**** Обработка оружия закончилась успешно ****")
+	return nil
 }
 
 func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
@@ -652,13 +703,7 @@ func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
 }
 
 func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
-	/*if c.User.RoleId != 2 {
-		c.SetError(403, "Сохранить героя может только игрок")
-		return
-	}*/
 	if game, ok := GameMap.m[c.User.Game]; ok {
-		//if game.Player[c.Player.PlayerId].Id == c.User.ID {
-		//h := game.Player[c.Player.PlayerId].Hero.HeroDB
 		if p, ok := game.Player[c.User.Login]; ok {
 			if p.Hero == nil {
 				c.SetError(404, "Герой не найден")
@@ -672,13 +717,27 @@ func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
 				c.SetError(403, "Сохранить героя может только игрок")
 				return
 			}
+			var e error
+			tx, err := Conn.Begin()
+			if err != nil {
+				c.SetError(500, "Невозможно начать транзакцию")
+			}
 			h := p.Hero.HeroDB
-			_, err := Conn.Exec("update heroes set Exp=?, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Exp, h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
+			_, err = Conn.Exec("update heroes set Exp=?, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Exp, h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
 			if err != nil {
 				c.SetError(500, "Невозможно сохранить героя")
 				fmt.Println(err.Error())
-				return
+				e = err
 			}
+
+			e = SaveWeapons(p.Hero)
+
+			if e != nil {
+				c.SetError(500, "Ошибки в транзакции")
+				fmt.Println(e.Error())
+				tx.Rollback()
+			}
+			tx.Commit()
 			c.Response = "true"
 			return
 		} else {
@@ -714,12 +773,18 @@ func (c *Context) SaveGame(iWrt web.ResponseWriter, iReq *web.Request) {
 				_, err := tx.Exec("update heroes set Exp=?, Speed=?, HP=?, HPmax=?, HitBonesMax=?, HitBones=?, Strength=?, Perception=?, Endurance=?, Charisma=?, Intelligence=?, Agility=?, MasterBonus=?, DeathSavingThrowGood=?, DeathSavingThrowBad=?, TemporaryHP=?, AC=?, Initiative=?, PassiveAttention=?, Inspiration=?, Ammo=?, Languages=?, SavingThrowS=?, SavingThrowP=?, SavingThrowE=?, SavingThrowC=?, SavingThrowI=?, SavingThrowA=?, Athletics=?, Acrobatics=?, Juggle=?, Stealth=?, Magic=?, History=?, Analysis=?, Nature=?, Religion=?, AnimalCare=?, Insight=?, Medicine=?, Attention=?, Survival=?, Deception=?, Intimidation=?, Performance=?, Conviction=?, WeaponFirstId=?, WeaponSecondId=?, ArmorId=?, ShieldId=? where Id=?", h.Exp, h.Speed, h.HP, h.HPmax, h.HitBonesMax, h.HitBones, h.Strength, h.Perception, h.Endurance, h.Charisma, h.Intelligence, h.Agility, h.MasterBonus, h.DeathSavingThrowGood, h.DeathSavingThrowBad, h.TemporaryHP, h.AC, h.Initiative, h.PassiveAttention, h.Inspiration, h.Ammo, h.Languages, h.SavingThrowS, h.SavingThrowP, h.SavingThrowE, h.SavingThrowC, h.SavingThrowI, h.SavingThrowA, h.Athletics, h.Acrobatics, h.Juggle, h.Stealth, h.Magic, h.History, h.Analysis, h.Nature, h.Religion, h.AnimalCare, h.Insight, h.Medicine, h.Attention, h.Survival, h.Deception, h.Intimidation, h.Performance, h.Conviction, h.WeaponFirstId, h.WeaponSecondId, h.ArmorId, h.ShieldId, h.Id)
 				if err != nil {
 					e = err
+					break
+				}
+				e = SaveWeapons(i.Hero)
+				if e != nil {
+					break
 				}
 			}
 		}
 		if e != nil {
 			c.SetError(500, "Невозможно сохранить игру")
 			tx.Rollback()
+			fmt.Println(e.Error())
 			return
 		}
 		tx.Commit()
@@ -742,11 +807,6 @@ func (c *Context) Reg(iWrt web.ResponseWriter, iReq *web.Request) {
 		log.Printf(err.Error())
 		return
 	}
-	if config.AdminToken != newUser.Token {
-		c.SetError(403, "Неверный хэш администратора")
-		log.Println("Токены не совпали")
-		return
-	}
 
 	fmt.Println("Началась бд")
 	user := []sUser{}
@@ -759,7 +819,16 @@ func (c *Context) Reg(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 
 	if len(user) == 0 {
-		_, err = Conn.Exec("insert into users (login, hash) values (?,?)", newUser.Login, newUser.Hash)
+		if config.AdminToken == newUser.Token {
+			_, err = Conn.Exec("insert into users (login, hash, roleid) values (?,?,?)", newUser.Login, newUser.Hash, 1)
+		} else {
+			if newUser.Token == "" {
+				_, err = Conn.Exec("insert into users (login, hash) values (?,?)", newUser.Login, newUser.Hash)
+			} else {
+				c.SetError(403, "Неверный хэш администратора")
+				return
+			}
+		}
 		if err != nil {
 			log.Printf(err.Error())
 			c.SetError(500, "Ошибка базы данных")
@@ -943,10 +1012,15 @@ func (c *Context) GetHero(iWrt web.ResponseWriter, iReq *web.Request) {
 	c.Hero = GameMap.m[c.User.Game].Player[c.User.Login].Hero
 }
 
-func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request) {
+func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	GameMap.m[c.User.Game].Player[c.User.Login].Hero = c.Hero
 	c.Hero = nil
 	c.Response = "true"
+	next(iWrt, iReq)
+}
+
+func (c *Context) Empty(iWrt web.ResponseWriter, iReq *web.Request) {
+	return
 }
 
 func (c *Context) GetManual(iWrt web.ResponseWriter, iReq *web.Request) {
