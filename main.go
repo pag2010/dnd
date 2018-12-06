@@ -174,7 +174,8 @@ type sWeaponDBfull struct {
 }
 
 type sWeaponDB struct {
-	Id int `db:"Id" json:"id"`
+	Id    int `db:"Id" json:"id"`
+	Count int `db:"CountW" json:"count"`
 	/*Name       string `db:"Name" json:"name"`
 	Damage     string `db:"Damage" json:"damage"`
 	DmgType    int    `db:"DmgType" json:"dmgtype"`
@@ -186,6 +187,7 @@ type sWeaponDB struct {
 type sHero struct { //Главная структура героя. Содержит версию БД и массив оружия
 	HeroDB  *sHeroDB    `json:"heroInfo"`
 	Weapons []sWeaponDB `json:"weapons,omitemty"`
+	//Weapons []int `json:"weapons,omitemty"`
 }
 
 type HeroToShow struct { //Нужен только для показа списка героев. Содержит только id и имя
@@ -294,6 +296,7 @@ func main() {
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Get("/manual", (*Context).GetManual)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePatch).Patch("/sw", (*Context).SaveWeapons)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
@@ -553,20 +556,74 @@ func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.
 func (h *sHero) LoadWeapons() error {
 	//h.Weapons = make([]sWeaponDB, 2)
 	weapons := []sWeaponDB{}
+	//weapons := []int{}
 	//err := Conn.Select(&weapons, "SELECT weapons.Id, weapons.Name, weapons.Damage, dmgtype.name as 'DmgType', weapontype.Name as 'WeaponType', weapons.Cost, weapons.Weight from weapons inner join dmgtype on weapons.dmgtype = dmgtype.id inner join weapontype on weapons.Type= weapontype.id where weapons.Id = ? and weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
 	/*err := Conn.Select(&weapons, "SELECT id from weapons where weapons.Id = ? or weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
 	if err != nil {
 		return err
 	}*/
 	//h.Weapons = weapons
-	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id' from HeroToWeapons where HeroId = ?", h.HeroDB.Id)
-	fmt.Println(h.HeroDB.Id)
+	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id', CountW from HeroToWeapons where HeroId = ?", h.HeroDB.Id) //kek
+	fmt.Println(weapons[0].Id)
 	if err != nil {
 		return err
 	}
 	h.Weapons = weapons
 	//h.Weapons = append(h.Weapons, weapons...)
 	return nil
+}
+
+func (c *Context) SaveWeapons(iWrt web.ResponseWriter, iReq *web.Request) {
+	weapons := []sWeaponDB{}
+	//c.Hero.Weapons = append(c.Hero.Weapons, sWeaponDB{1, 1})
+	err := Conn.Select(&weapons, "Select weaponid as 'Id', CountW from herotoweapons where heroid=?", c.Hero.HeroDB.Id)
+	if err != nil {
+		fmt.Println(err.Error())
+		c.SetError(500, "Невозможно получить список оружия героя из БД")
+		return
+	}
+	oldw := make(map[int]int)
+	neww := make(map[int]int)
+	delm := []int{}
+	//neww := []sWeaponDB{}
+	updw := []sWeaponDB{}
+	insw := []sWeaponDB{}
+	var w sWeaponDB
+	if c.Hero == nil {
+		c.SetError(406, "Оружие героя nil")
+		return
+	}
+	for _, i := range weapons {
+		oldw[i.Id] = i.Count
+	}
+	for _, i := range c.Hero.Weapons {
+		neww[i.Id] = i.Count
+	}
+	for id, count := range neww {
+		if c, ok := oldw[id]; ok {
+			if c != count {
+				w.Id = id
+				w.Count = count
+				updw = append(updw, w)
+			}
+		} else {
+			w.Id = id
+			w.Count = count
+			insw = append(insw, w)
+		}
+	}
+
+	for id, _ := range oldw {
+		if _, ok := neww[id]; !ok {
+			delm = append(delm, id)
+		}
+	}
+
+	fmt.Printf("Update %+v\n", updw)
+	fmt.Printf("Insert %+v\n", insw)
+	fmt.Printf("Delete %+v\n", delm)
+
+	return
 }
 
 func (c *Context) DestroyGame(iWrt web.ResponseWriter, iReq *web.Request) {
