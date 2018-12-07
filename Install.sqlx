@@ -1,14 +1,38 @@
 /*
-MySQL Backup
-Source Server Version: 5.7.20
-Source Database: dnd
-Date: 23.11.2018 20:08:44
+Navicat MySQL Data Transfer
+
+Source Server         : Local
+Source Server Version : 50720
+Source Host           : localhost:3306
+Source Database       : dnd
+
+Target Server Type    : MYSQL
+Target Server Version : 50720
+File Encoding         : 65001
+
+Date: 2018-12-07 21:45:02
 */
 
 SET FOREIGN_KEY_CHECKS=0;
+-- ----------------------------
+-- Table structure for `abilities`
+-- ----------------------------
+DROP TABLE IF EXISTS `abilities`;
+CREATE TABLE `abilities` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) NOT NULL DEFAULT 'Неизвестное название',
+  `about` varchar(255) NOT NULL DEFAULT 'Неизвестно',
+  `exp` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `armors`
+-- Records of abilities
+-- ----------------------------
+INSERT INTO `Abilities` VALUES ('1', 'Уклонение', 'Герой уклоняется от рукопашной атаки. +1 КД', '0');
+
+-- ----------------------------
+-- Table structure for `armors`
 -- ----------------------------
 DROP TABLE IF EXISTS `armors`;
 CREATE TABLE `armors` (
@@ -20,20 +44,32 @@ CREATE TABLE `armors` (
   PRIMARY KEY (`Id`),
   KEY `Type` (`Type`),
   CONSTRAINT `armors_ibfk_1` FOREIGN KEY (`Type`) REFERENCES `armortype` (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `armortype`
+-- Records of armors
+-- ----------------------------
+INSERT INTO `armors` VALUES ('1', 'Крестьянская туника', '0', '2', '1');
+INSERT INTO `armors` VALUES ('2', 'Одежда вороньего крыла', '5', '2', '1');
+
+-- ----------------------------
+-- Table structure for `armortype`
 -- ----------------------------
 DROP TABLE IF EXISTS `armortype`;
 CREATE TABLE `armortype` (
   `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `Name` varchar(30) NOT NULL DEFAULT '',
   PRIMARY KEY (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251 ROW_FORMAT=DYNAMIC;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251 ROW_FORMAT=DYNAMIC;
 
 -- ----------------------------
---  Table structure for `classes`
+-- Records of armortype
+-- ----------------------------
+INSERT INTO `armortype` VALUES ('1', '\'Неизвестный тип\'');
+INSERT INTO `armortype` VALUES ('2', 'Простая одежда');
+
+-- ----------------------------
+-- Table structure for `classes`
 -- ----------------------------
 DROP TABLE IF EXISTS `classes`;
 CREATE TABLE `classes` (
@@ -42,20 +78,52 @@ CREATE TABLE `classes` (
   `About` varchar(255) NOT NULL DEFAULT '',
   `BoneHit` varchar(20) NOT NULL DEFAULT '',
   PRIMARY KEY (`Id`)
-) ENGINE=InnoDB DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `dmgtype`
+-- Records of classes
+-- ----------------------------
+INSERT INTO `classes` VALUES ('1', 'Воин', 'Дерзкий опытный вояка', '10');
+
+-- ----------------------------
+-- Table structure for `classtoabi`
+-- ----------------------------
+DROP TABLE IF EXISTS `classtoabi`;
+CREATE TABLE `classtoabi` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `idClass` int(10) unsigned NOT NULL,
+  `idAbi` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idClass` (`idClass`),
+  KEY `idAbi` (`idAbi`),
+  CONSTRAINT `classtoabi_ibfk_1` FOREIGN KEY (`idClass`) REFERENCES `classes` (`Id`) ON UPDATE CASCADE,
+  CONSTRAINT `classtoabi_ibfk_2` FOREIGN KEY (`idAbi`) REFERENCES `abilities` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+-- Records of classtoabi
+-- ----------------------------
+INSERT INTO `ClassToAbi` VALUES ('1', '1', '1');
+
+-- ----------------------------
+-- Table structure for `dmgtype`
 -- ----------------------------
 DROP TABLE IF EXISTS `dmgtype`;
 CREATE TABLE `dmgtype` (
   `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `Name` char(50) NOT NULL DEFAULT '',
   PRIMARY KEY (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `heroes`
+-- Records of dmgtype
+-- ----------------------------
+INSERT INTO `dmgtype` VALUES ('1', 'Неизвестный тип');
+INSERT INTO `dmgtype` VALUES ('2', 'Колющий');
+INSERT INTO `dmgtype` VALUES ('3', 'Рубящий');
+
+-- ----------------------------
+-- Table structure for `heroes`
 -- ----------------------------
 DROP TABLE IF EXISTS `heroes`;
 CREATE TABLE `heroes` (
@@ -121,10 +189,23 @@ CREATE TABLE `heroes` (
   CONSTRAINT `heroes_ibfk_2` FOREIGN KEY (`WeaponSecondId`) REFERENCES `weapons` (`Id`),
   CONSTRAINT `heroes_ibfk_3` FOREIGN KEY (`ArmorId`) REFERENCES `armors` (`Id`),
   CONSTRAINT `heroes_ibfk_4` FOREIGN KEY (`ShieldId`) REFERENCES `armors` (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `herotoclass`
+-- Records of heroes
+-- ----------------------------
+INSERT INTO `heroes` VALUES ('1', 'Саша', '', '4000', '30', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('2', 'Бонарт', '1', '0', '1', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('3', 'Бонарт', '1', '0', '1', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('4', 'GM', 'prehistory', '4000', '30', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('5', 'Cocotun', 'Coco', '3000', '30', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('6', 'Бонарт', '', '4000', '30', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('7', 'Бонарт', '', '4000', '30', '10', '10', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('8', 'Миша', 'Жил да был великий воин...', '4000', '30', '10', '10', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+INSERT INTO `heroes` VALUES ('9', 'Илья', 'И был он великий герой...', '4000', '30', '10', '10', '1', '1', '1', '1', '1', '1', '1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1');
+
+-- ----------------------------
+-- Table structure for `herotoclass`
 -- ----------------------------
 DROP TABLE IF EXISTS `herotoclass`;
 CREATE TABLE `herotoclass` (
@@ -136,10 +217,37 @@ CREATE TABLE `herotoclass` (
   KEY `IdHero` (`IdHero`),
   CONSTRAINT `herotoclass_ibfk_1` FOREIGN KEY (`IdClass`) REFERENCES `classes` (`Id`),
   CONSTRAINT `herotoclass_ibfk_2` FOREIGN KEY (`IdHero`) REFERENCES `heroes` (`Id`)
-) ENGINE=InnoDB DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `herotouser`
+-- Records of herotoclass
+-- ----------------------------
+INSERT INTO `herotoclass` VALUES ('1', '1', '1');
+
+-- ----------------------------
+-- Table structure for `herotoitems`
+-- ----------------------------
+DROP TABLE IF EXISTS `herotoitems`;
+CREATE TABLE `herotoitems` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `idHero` int(10) unsigned NOT NULL,
+  `idItem` int(10) unsigned NOT NULL,
+  `count` int(10) unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  KEY `idHero` (`idHero`),
+  KEY `idItem` (`idItem`),
+  CONSTRAINT `herotoitems_ibfk_1` FOREIGN KEY (`idHero`) REFERENCES `heroes` (`Id`) ON UPDATE CASCADE,
+  CONSTRAINT `herotoitems_ibfk_2` FOREIGN KEY (`idItem`) REFERENCES `items` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+-- Records of herotoitems
+-- ----------------------------
+INSERT INTO `HeroToItems` VALUES ('1', '1', '1', '5');
+INSERT INTO `HeroToItems` VALUES ('2', '1', '2', '3');
+
+-- ----------------------------
+-- Table structure for `herotouser`
 -- ----------------------------
 DROP TABLE IF EXISTS `herotouser`;
 CREATE TABLE `herotouser` (
@@ -151,10 +259,56 @@ CREATE TABLE `herotouser` (
   KEY `IdHero` (`IdHero`),
   CONSTRAINT `herotouser_ibfk_1` FOREIGN KEY (`IdUser`) REFERENCES `users` (`id`),
   CONSTRAINT `herotouser_ibfk_2` FOREIGN KEY (`IdHero`) REFERENCES `heroes` (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `roles`
+-- Records of herotouser
+-- ----------------------------
+INSERT INTO `herotouser` VALUES ('1', '2', '1');
+INSERT INTO `herotouser` VALUES ('2', '22', '2');
+INSERT INTO `herotouser` VALUES ('3', '2', '9');
+
+-- ----------------------------
+-- Table structure for `herotoweapons`
+-- ----------------------------
+DROP TABLE IF EXISTS `herotoweapons`;
+CREATE TABLE `herotoweapons` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `HeroId` int(10) unsigned NOT NULL,
+  `WeaponId` int(10) unsigned NOT NULL,
+  `CountW` int(10) unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  KEY `HeroId` (`HeroId`),
+  KEY `WeaponId` (`WeaponId`),
+  CONSTRAINT `herotoweapons_ibfk_1` FOREIGN KEY (`HeroId`) REFERENCES `heroes` (`Id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `herotoweapons_ibfk_2` FOREIGN KEY (`WeaponId`) REFERENCES `weapons` (`Id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+-- Records of herotoweapons
+-- ----------------------------
+INSERT INTO `herotoweapons` VALUES ('4', '1', '2', '1');
+
+-- ----------------------------
+-- Table structure for `items`
+-- ----------------------------
+DROP TABLE IF EXISTS `items`;
+CREATE TABLE `items` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) NOT NULL DEFAULT 'Неизвестный предмет',
+  `about` varchar(255) NOT NULL DEFAULT 'Неизвестные свойства',
+  `cost` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+-- Records of items
+-- ----------------------------
+INSERT INTO `items` VALUES ('1', 'Неизвестный предмет', 'Неизвестные свойства', '0');
+INSERT INTO `items` VALUES ('2', 'Факел', 'Освещает тьму', '5');
+
+-- ----------------------------
+-- Table structure for `roles`
 -- ----------------------------
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles` (
@@ -165,7 +319,13 @@ CREATE TABLE `roles` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `users`
+-- Records of roles
+-- ----------------------------
+INSERT INTO `roles` VALUES ('1', 'Game Master', 'Game administrator, all rules');
+INSERT INTO `roles` VALUES ('2', 'Player', 'Game player, no super rules');
+
+-- ----------------------------
+-- Table structure for `users`
 -- ----------------------------
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
@@ -176,12 +336,61 @@ CREATE TABLE `users` (
   `roleId` int(10) NOT NULL DEFAULT '2',
   `game` varchar(36) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `login` (`login`),
   KEY `role` (`roleId`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`roleId`) REFERENCES `roles` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `weapons`
+-- Records of users
+-- ----------------------------
+INSERT INTO `users` VALUES ('1', 'pag', 'kekeke', '84da4334-d63c-11e8-88b4-18dbf2156010', '1', 'ca66642a-abcd-43f2-ae59-229e74948d58');
+INSERT INTO `users` VALUES ('2', 'admin', 'admin', 'dbb34896-12fe-4585-94c0-ca8d3f727bce', '2', 'ca66642a-abcd-43f2-ae59-229e74948d58');
+INSERT INTO `users` VALUES ('3', 'maxim', 'way', '5b42ee5b-c0ba-404d-87c0-e00d3020dc5e', '2', 'b78d4c71-3826-4b57-bffc-584c5a2211c1');
+INSERT INTO `users` VALUES ('4', 'maxim228', 'way', '\"\"', '2', '');
+INSERT INTO `users` VALUES ('5', 'maxim229', 'way', '\"\"', '2', '');
+INSERT INTO `users` VALUES ('6', 'maxim230', 'way', '\"\"', '2', '');
+INSERT INTO `users` VALUES ('7', 'maxim300', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('8', 'maxim301', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('9', 'maxim302', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('10', 'maxim303', 'way', '72625747-962d-483f-b175-948f7def463f', '2', '');
+INSERT INTO `users` VALUES ('11', 'maxim304', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('12', 'maxim333', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('13', 'maximm', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('14', 'maximka', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('15', 'maxka', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('16', 'administrator', 'way', 'ea3cd42c-8bbb-4b5f-8c6e-fc278984e047', '2', '');
+INSERT INTO `users` VALUES ('17', 'administratorr', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('18', 'adminis', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('19', 'sashka', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('20', 'sashkaa', 'way', '', '2', '');
+INSERT INTO `users` VALUES ('21', 'sashkaaa', 'way', '9260b7f0-3e37-47d0-a0f5-711292625673', '2', '');
+INSERT INTO `users` VALUES ('22', 'masha', 'way', '78527ad5-5286-4835-9c58-c9a36b753bf0', '2', '22301d16-4732-4342-9e89-6a7b7c7aab18');
+
+-- ----------------------------
+-- Table structure for `version`
+-- ----------------------------
+DROP TABLE IF EXISTS `version`;
+CREATE TABLE `version` (
+  `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Weapons` int(10) unsigned NOT NULL DEFAULT '0',
+  `Armors` int(10) unsigned NOT NULL DEFAULT '0',
+  `ArmorTypes` int(10) unsigned NOT NULL DEFAULT '0',
+  `WeaponTypes` int(10) unsigned NOT NULL DEFAULT '0',
+  `Classes` int(10) unsigned NOT NULL DEFAULT '0',
+  `Roles` int(10) unsigned NOT NULL DEFAULT '0',
+  `Abilities` int(10) unsigned NOT NULL DEFAULT '0',
+  `Items` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+
+-- ----------------------------
+-- Records of version
+-- ----------------------------
+INSERT INTO `version` VALUES ('1', '1', '1', '1', '0', '1', '0', '2', '2');
+
+-- ----------------------------
+-- Table structure for `weapons`
 -- ----------------------------
 DROP TABLE IF EXISTS `weapons`;
 CREATE TABLE `weapons` (
@@ -197,25 +406,83 @@ CREATE TABLE `weapons` (
   KEY `DmgType` (`DmgType`),
   CONSTRAINT `weapons_ibfk_1` FOREIGN KEY (`Type`) REFERENCES `weapontype` (`Id`),
   CONSTRAINT `weapons_ibfk_2` FOREIGN KEY (`DmgType`) REFERENCES `dmgtype` (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Table structure for `weapontype`
+-- Records of weapons
+-- ----------------------------
+INSERT INTO `weapons` VALUES ('1', 'Кулак', '1', '1', '1', '0', '0');
+INSERT INTO `weapons` VALUES ('2', 'Меч', '6', '1', '2', '10', '5');
+INSERT INTO `weapons` VALUES ('3', 'Лук', '6', '1', '1', '10', '3');
+INSERT INTO `weapons` VALUES ('5', '\'Неизвестное оружие\'', '0', '1', '1', '0', '1');
+
+-- ----------------------------
+-- Table structure for `weapontype`
 -- ----------------------------
 DROP TABLE IF EXISTS `weapontype`;
 CREATE TABLE `weapontype` (
   `Id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `Name` varchar(30) NOT NULL DEFAULT '',
   PRIMARY KEY (`Id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=cp1251;
 
 -- ----------------------------
---  Records 
+-- Records of weapontype
 -- ----------------------------
-INSERT INTO `armors` VALUES ('1','\'Простая одежда\'','0','1','1');
-INSERT INTO `armortype` VALUES ('1','\'Неизвестный тип\'');
-INSERT INTO `dmgtype` VALUES ('1','Неизвестный тип');
-INSERT INTO `herotouser` VALUES ('1','2','1');
-INSERT INTO `roles` VALUES ('1','Game Master','Game administrator, all rules'), ('2','Player','Game player, no super rules');
-INSERT INTO `weapons` VALUES ('1','Кулак','1','1','1','0','0');
-INSERT INTO `weapontype` VALUES ('1','Неизвестный тип');
+INSERT INTO `weapontype` VALUES ('1', 'Неизвестный тип');
+INSERT INTO `weapontype` VALUES ('2', 'Тяжелое');
+INSERT INTO `weapontype` VALUES ('3', 'Дальнобойное');
+
+-- ----------------------------
+-- View structure for `weaponview`
+-- ----------------------------
+DROP VIEW IF EXISTS `weaponview`;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `weaponview` AS select `weapons`.`Id` AS `Id`,`weapons`.`Name` AS `Name`,`weapons`.`Damage` AS `Damage`,`dmgtype`.`Name` AS `DmgType`,`weapontype`.`Name` AS `WeaponType`,`weapons`.`Cost` AS `Cost`,`weapons`.`Weight` AS `Weight` from ((`weapons` join `dmgtype` on((`weapons`.`DmgType` = `dmgtype`.`Id`))) join `weapontype` on((`weapons`.`Type` = `weapontype`.`Id`)));
+DELIMITER ;;
+CREATE TRIGGER `UpdateArmorVersion` AFTER INSERT ON `armors` FOR EACH ROW BEGIN
+   UPDATE version Set armors = armors+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateArmorTypesVersion` AFTER INSERT ON `armortype` FOR EACH ROW BEGIN
+   UPDATE version Set armortypes = armortypes+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateClassesVersion` AFTER INSERT ON `classes` FOR EACH ROW BEGIN
+   UPDATE version Set classes = classes+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateItemsVersion` AFTER INSERT ON `items` FOR EACH ROW BEGIN
+   UPDATE version Set items = items+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateAbilitiesVersion` AFTER INSERT ON `items` FOR EACH ROW BEGIN
+   UPDATE version Set Abilities = Abilities+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateRolesVersion` AFTER INSERT ON `roles` FOR EACH ROW BEGIN
+   UPDATE version Set roles = roles+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateWeaponVersion` AFTER INSERT ON `weapons` FOR EACH ROW BEGIN
+   UPDATE version Set weapons = weapons+1;
+END
+;;
+DELIMITER ;
+DELIMITER ;;
+CREATE TRIGGER `UpdateWeaponTypesVersion` AFTER INSERT ON `weapontype` FOR EACH ROW BEGIN
+   UPDATE version Set weapontypes = weapontypes+1;
+END
+;;
+DELIMITER ;
