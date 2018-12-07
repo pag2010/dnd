@@ -54,6 +54,7 @@ type Context struct {
 	Manual       *sManual        `json:"manual,omitempty"`
 	HeroList     []HeroToShow    `json:"heroes,omitempty"`
 	GameSessions map[string]int  `json:"games,omitempty"`
+	ServerVesion int             `json:"version,omitempty"`
 }
 
 type sUser struct {
@@ -212,8 +213,23 @@ type sManual struct {
 	DmgTypes    []sDmgType      `json:"dmgtype,omitemty"`
 	WeaponTypes []sWeaponType   `json:"weapontypes,omitemty"`
 	Classes     []sClass        `json:"classes,omitemty"`
-	Armors      []sArmor        `json:"armor,omitemty"`
-	ArmorTypes  []sArmorType    `json:"armortype,omitemty"`
+	Armors      []sArmor        `json:"armors,omitemty"`
+	ArmorTypes  []sArmorType    `json:"armortypes,omitemty"`
+	Abilities   []sAbility      `json:"abilities,omitemty"`
+	Items       []sItem         `json:"items,omitemty"`
+}
+
+type sItem struct {
+	Id    int    `db:"id" json:"id"`
+	Name  string `db:"name" json:"name"`
+	About string `db:"about" json:"about"`
+	Cost  int    `db:"cost" json:"cost"`
+}
+
+type sAbility struct {
+	Id    int    `db:"id" json:"id"`
+	Name  string `db:"name" json:"name"`
+	About string `db:"about" json:"about"`
 }
 
 type sDmgType struct {
@@ -253,10 +269,20 @@ type sArmorType struct {
 	Name string `db:"Name" json:"name"`
 }
 
+type sVersion struct {
+	Weapons     int `db:"Weapons" json:"weapons"`
+	Armors      int `db:"Armors" json:"armors"`
+	ArmorTypes  int `db:"ArmorTypes" json:"armorTypes"`
+	WeaponTypes int `db:"WeaponTypes" json:"weaponTypes"`
+	Classes     int `db:"Classes" json:"classes"`
+	Roles       int `db:"Roles" json:"roles"`
+}
+
 var config sConfig
 var Conn *sqlx.DB
-
+var Manual *sManual
 var GameMap sGameMap
+var Version sVersion
 
 //var GameMap map[string]sGame
 var GameSessions map[string]int
@@ -291,8 +317,8 @@ func main() {
 	}
 	GameMap.m = make(map[string]sGame)
 	GameSessions = make(map[string]int)
-	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
-	//router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
+	//router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
+	router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
 	router.Subrouter(Context{}, "/").Post("/ping", (*Context).Ping)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
@@ -984,6 +1010,7 @@ func (c *Context) ParsePatch(iWrt web.ResponseWriter, iReq *web.Request, next we
 		return
 	}
 	c.Hero = Herojson.Hero
+	//fmt.Println(c.User.Login)
 	next(iWrt, iReq)
 }
 
@@ -1013,7 +1040,13 @@ func (c *Context) GetHero(iWrt web.ResponseWriter, iReq *web.Request) {
 }
 
 func (c *Context) UpdateHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	if c.Hero == nil {
+		c.SetError(406, "В теле запроса не найден герой")
+		return
+	}
 	GameMap.m[c.User.Game].Player[c.User.Login].Hero = c.Hero
+	lData, _ := json.Marshal(c)
+	fmt.Println(string(lData))
 	c.Hero = nil
 	c.Response = "true"
 	next(iWrt, iReq)
@@ -1023,50 +1056,98 @@ func (c *Context) Empty(iWrt web.ResponseWriter, iReq *web.Request) {
 	return
 }
 
+func (v *sVersion) CheckVersion() int {
+	return (v.Armors + v.ArmorTypes + v.Classes + v.Roles + v.Weapons + v.WeaponTypes)
+
+}
+
 func (c *Context) GetManual(iWrt web.ResponseWriter, iReq *web.Request) {
+	var e, err error
+	nVersion := []sVersion{}
+	err = Conn.Select(&nVersion, "Select Weapons, Armors, ArmorTypes, WeaponTypes, Classes, Roles from version where id=1")
+	if err != nil {
+		fmt.Println(err.Error())
+		c.SetError(500, "Невозможно получить версию из БД")
+		return
+	}
 	c.Manual = new(sManual)
-	err := Conn.Select(&c.Manual.Weapons, "SELECT * from weapons")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника ОРУЖИЕ")
-		return
-	}
+	fmt.Printf("Server version is %d and DataBase version is %d\n", Version.CheckVersion(), nVersion[0].CheckVersion())
+	if nVersion[0].CheckVersion() > Version.CheckVersion() {
+		err = Conn.Select(&c.Manual.Weapons, "SELECT * from weapons")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника ОРУЖИЕ")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.Roles, "SELECT * from roles")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника РОЛИ")
-		return
-	}
+		err = Conn.Select(&c.Manual.Roles, "SELECT * from roles")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника РОЛИ")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.DmgTypes, "SELECT * from dmgtype")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника ТИП УРОНА")
-		return
-	}
+		err = Conn.Select(&c.Manual.DmgTypes, "SELECT * from dmgtype")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника ТИП УРОНА")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.WeaponTypes, "SELECT * from weapontype")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника ТИП ОРУЖИЯ")
-		return
-	}
+		err = Conn.Select(&c.Manual.WeaponTypes, "SELECT * from weapontype")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника ТИП ОРУЖИЯ")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.Classes, "SELECT * from classes")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника КЛАССЫ")
-		return
-	}
+		err = Conn.Select(&c.Manual.Classes, "SELECT * from classes")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника КЛАССЫ")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.ArmorTypes, "SELECT * from armortype")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника ТИП БРОНИ")
-		return
-	}
+		err = Conn.Select(&c.Manual.ArmorTypes, "SELECT * from armortype")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника ТИП БРОНИ")
+			return*/
+		}
 
-	err = Conn.Select(&c.Manual.Armors, "SELECT * from armors")
-	if err != nil {
-		c.SetError(500, "Ошибка загрузки справочника БРОНЯ")
-		return
-	}
+		err = Conn.Select(&c.Manual.Armors, "SELECT * from armors")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника БРОНЯ")
+			return*/
+		}
 
+		err = Conn.Select(&c.Manual.Abilities, "SELECT * from abilities")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника СПОСОБНОСТИ")
+			return*/
+		}
+
+		err = Conn.Select(&c.Manual.Items, "SELECT * from items")
+		if err != nil {
+			e = err
+			/*c.SetError(500, "Ошибка загрузки справочника ПРЕДМЕТЫ")
+			return*/
+		}
+
+		if e != nil {
+			c.SetError(500, "Ошибка при загрузке справочников")
+			c.Manual = nil
+			return
+		}
+		Version = nVersion[0]
+		c.ServerVesion = Version.CheckVersion()
+		Manual = c.Manual
+	} else {
+		c.ServerVesion = Version.CheckVersion()
+		c.Manual = Manual
+	}
 }
 
 func (c *Context) Ping(iWrt web.ResponseWriter, iReq *web.Request) {
