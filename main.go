@@ -55,6 +55,7 @@ type Context struct {
 	HeroList     []HeroToShow    `json:"heroes,omitempty"`
 	GameSessions map[string]int  `json:"games,omitempty"`
 	ServerVesion int             `json:"version,omitempty"`
+	Loot         *sLoot          `json:"loot,omitempty"`
 }
 
 type sUser struct {
@@ -103,10 +104,23 @@ type sPlayer struct {
 }
 
 type sGame struct {
-	//Player []sPlayer //сделать map[string]*sPlayer
 	Player map[string]*sPlayer
-	//Count  int //убрать
+	Loot   *sLoot
 	sync.RWMutex
+}
+
+type jsLoot struct {
+	Loot *sLoot `json:"loot"`
+}
+
+type sLoot struct {
+	Weapons []sWeaponDB `json:"weapons,omitemty"`
+	Items   []sItem     `json:"items,omitemty"`
+	Armors  []sArmorDB  `json:"armors,omitemty"`
+}
+
+type sArmorDB struct {
+	Id int `db:"Id" json:"id"`
 }
 
 type sHeroDB struct {
@@ -349,7 +363,8 @@ func main() {
 	//router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Middleware((*Context).UpdateHero).Patch("/:game/SaveHero", (*Context).SaveHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
-
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParseLoot).Post("/:game/Loot", (*Context).OpenLoot)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Delete("/:game/Loot", (*Context).CloseLoot).Get("/:game/Loot", (*Context).GetLoot)
 	fmt.Println("Запускаемся. Слушаем порт 8080")
 	http.Handle("/", router)
 	err = http.ListenAndServe(":8080", nil)
@@ -413,7 +428,7 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 	game.Player[c.User.Login].Hero = nil
 	game.Player[c.User.Login].Session = c.User.Session
 	game.Player[c.User.Login].Role = c.User.RoleId
-
+	game.Loot = new(sLoot)
 	GameMap.Lock()
 	GameMap.m[session.String()] = game
 	GameMap.Unlock()
@@ -1326,6 +1341,82 @@ func (c *Context) NewHero(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 	tx.Commit()
 	c.Response = "true"
+}
+
+func (c *Context) ParseLoot(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	buf := json.NewDecoder(iReq.Body)
+	defer iReq.Body.Close()
+	var Jsloot jsLoot
+	err := buf.Decode(&Jsloot)
+	if err != nil {
+		c.SetError(400, "Невозможно преобразовать тело запроса в json")
+		return
+	}
+	//fmt.Printf("%v", Jsloot)
+	c.Loot = Jsloot.Loot
+	next(iWrt, iReq)
+}
+
+func (c *Context) OpenLoot(iWrt web.ResponseWriter, iReq *web.Request) {
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if player, ok := game.Player[c.User.Login]; ok {
+			if player.Role != 1 {
+				c.SetError(403, "Создать лут может только GM")
+				return
+			}
+			game.Loot = c.Loot
+			GameMap.Lock()
+			GameMap.m[c.User.Game] = game
+			GameMap.Unlock()
+			c.Loot = nil
+			c.Response = "true"
+		} else {
+			c.SetError(404, "Игрок не найден")
+			return
+		}
+
+	} else {
+		c.SetError(404, "Игра не найдена")
+		return
+	}
+}
+
+func (c *Context) CloseLoot(iWrt web.ResponseWriter, iReq *web.Request) {
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if player, ok := game.Player[c.User.Login]; ok {
+			if player.Role != 1 {
+				c.SetError(403, "Убрать лут может только GM")
+				return
+			}
+			game.Loot = nil
+			GameMap.Lock()
+			GameMap.m[c.User.Game] = game
+			GameMap.Unlock()
+			c.Response = "true"
+		} else {
+			c.SetError(404, "Игрок не найден")
+			return
+		}
+
+	} else {
+		c.SetError(404, "Игра не найдена")
+		return
+	}
+}
+
+func (c *Context) GetLoot(iWrt web.ResponseWriter, iReq *web.Request) {
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if _, ok := game.Player[c.User.Login]; ok {
+			c.Loot = game.Loot
+		} else {
+			c.SetError(404, "Игрок не найден")
+			return
+		}
+
+	} else {
+		c.SetError(404, "Игра не найдена")
+		return
+	}
 }
 
 func InstallDB() error {
