@@ -186,9 +186,20 @@ type sWeaponDB struct {
 	Weight     int    `db:"Weight" json:"weight"`*/
 }
 
+type sItem struct {
+	Id    int `db:"id" json:"id"`
+	Count int `db:"count" json:"count"`
+}
+
+type sAbility struct {
+	Id int `db:"id" json:"id"`
+}
+
 type sHero struct { //Главная структура героя. Содержит версию БД и массив оружия
-	HeroDB  *sHeroDB    `json:"heroInfo"`
-	Weapons []sWeaponDB `json:"weapons,omitemty"`
+	HeroDB    *sHeroDB    `json:"heroInfo"`
+	Weapons   []sWeaponDB `json:"weapons,omitemty"`
+	Items     []sItem     `json:"items,omitemty"`
+	Abilities []sAbility  `json:"abilities,omitemty"`
 	//Weapons []int `json:"weapons,omitemty"`
 }
 
@@ -215,21 +226,22 @@ type sManual struct {
 	Classes     []sClass        `json:"classes,omitemty"`
 	Armors      []sArmor        `json:"armors,omitemty"`
 	ArmorTypes  []sArmorType    `json:"armortypes,omitemty"`
-	Abilities   []sAbility      `json:"abilities,omitemty"`
-	Items       []sItem         `json:"items,omitemty"`
+	Abilities   []sAbilityDB    `json:"abilities,omitemty"`
+	Items       []sItemDB       `json:"items,omitemty"`
 }
 
-type sItem struct {
+type sItemDB struct {
 	Id    int    `db:"id" json:"id"`
 	Name  string `db:"name" json:"name"`
 	About string `db:"about" json:"about"`
 	Cost  int    `db:"cost" json:"cost"`
 }
 
-type sAbility struct {
+type sAbilityDB struct {
 	Id    int    `db:"id" json:"id"`
 	Name  string `db:"name" json:"name"`
 	About string `db:"about" json:"about"`
+	Exp   int    `db:"exp" json:"exp"`
 }
 
 type sDmgType struct {
@@ -568,7 +580,6 @@ func (c *Context) LoadHeroList(idUser int) (err error) {
 func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
 	fmt.Println("LOAD HERO")
 	hero := []sHeroDB{}
-	//err := Conn.Select(&hero, "select * from Heroes where id=?", c.Player.Hero)
 	err := Conn.Select(&hero, "select heroes.* from heroes inner join herotouser on heroes.id=herotouser.IdHero where herotouser.IdUser = ? and herotouser.IdHero=?", c.User.ID, c.Player.Hero)
 	if err != nil {
 		c.SetError(500, "Невозможно загрузить героя из БД")
@@ -580,27 +591,54 @@ func (c *Context) LoadHero(iWrt web.ResponseWriter, iReq *web.Request, next web.
 	}
 	c.Hero = new(sHero)
 	c.Hero.HeroDB = &hero[0]
-	c.Hero.LoadWeapons()
+	err = c.Hero.LoadWeapons()
+	if err != nil {
+		c.SetError(500, "Невозможно загрузить оружие героя из БД")
+		c.Hero = nil
+		return
+	}
+	c.Hero.LoadItems()
+	if err != nil {
+		c.SetError(500, "Невозможно загрузить предметы героя из БД")
+		c.Hero = nil
+		return
+	}
+	c.Hero.LoadAbilities()
+	if err != nil {
+		c.SetError(500, "Невозможно загрузить способности героя из БД")
+		c.Hero = nil
+		return
+	}
 	next(iWrt, iReq)
 }
 
 func (h *sHero) LoadWeapons() error {
-	//h.Weapons = make([]sWeaponDB, 2)
 	weapons := []sWeaponDB{}
-	//weapons := []int{}
-	//err := Conn.Select(&weapons, "SELECT weapons.Id, weapons.Name, weapons.Damage, dmgtype.name as 'DmgType', weapontype.Name as 'WeaponType', weapons.Cost, weapons.Weight from weapons inner join dmgtype on weapons.dmgtype = dmgtype.id inner join weapontype on weapons.Type= weapontype.id where weapons.Id = ? and weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
-	/*err := Conn.Select(&weapons, "SELECT id from weapons where weapons.Id = ? or weapons.Id = ?", h.HeroDB.WeaponFirstId, h.HeroDB.WeaponSecondId)
-	if err != nil {
-		return err
-	}*/
-	//h.Weapons = weapons
-	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id', CountW from HeroToWeapons where HeroId = ?", h.HeroDB.Id) //kek
-	//fmt.Println(weapons[0].Id)
+	err := Conn.Select(&weapons, "SELECT WeaponId as 'Id', CountW from HeroToWeapons where HeroId = ?", h.HeroDB.Id)
 	if err != nil {
 		return err
 	}
 	h.Weapons = weapons
-	//h.Weapons = append(h.Weapons, weapons...)
+	return nil
+}
+
+func (h *sHero) LoadItems() error {
+	items := []sItem{}
+	err := Conn.Select(&items, "SELECT idItem as 'id', count from HeroToItems where idHero = ?", h.HeroDB.Id)
+	if err != nil {
+		return err
+	}
+	h.Items = items
+	return nil
+}
+
+func (h *sHero) LoadAbilities() error {
+	abi := []sAbility{}
+	err := Conn.Select(&abi, "select idAbi as 'id' from heroes inner join herotoclass on heroes.id=herotoclass.idclass inner join classtoabi on classtoabi.idclass =herotoclass.idclass where heroes.id=?", h.HeroDB.Id)
+	if err != nil {
+		return err
+	}
+	h.Abilities = abi
 	return nil
 }
 
@@ -610,18 +648,15 @@ func SaveWeapons(h *sHero) error {
 		return errors.New("Герой пустой!")
 	}
 	weapons := []sWeaponDB{}
-	//c.Hero.Weapons = append(c.Hero.Weapons, sWeaponDB{1, 1})
 	err := Conn.Select(&weapons, "Select weaponid as 'Id', CountW from herotoweapons where heroid=?", h.HeroDB.Id)
 	if err != nil {
 		fmt.Println(err.Error())
-		//c.SetError(500, "Невозможно получить список оружия героя из БД")
 		return err
 	}
 	fmt.Println("**** Обработка оружия началась ****")
 	oldw := make(map[int]int)
 	neww := make(map[int]int)
 	delm := []int{}
-	//neww := []sWeaponDB{}
 	updw := []sWeaponDB{}
 	insw := []sWeaponDB{}
 	var w sWeaponDB
@@ -657,9 +692,7 @@ func SaveWeapons(h *sHero) error {
 	}
 
 	var e error
-	//tx, err := Conn.Begin()
 	if err != nil {
-		//c.SetError(500, "Невозможно начать транзакцию с БД")
 		return err
 	}
 	for _, i := range updw {
@@ -688,18 +721,103 @@ func SaveWeapons(h *sHero) error {
 
 	if e != nil {
 		fmt.Println(e.Error())
-		//c.SetError(500, "Невозможно сохранить игру")
-		//tx.Rollback()
 		return e
 	}
-
-	//tx.Commit()
 
 	fmt.Printf("Update %+v\n", updw)
 	fmt.Printf("Insert %+v\n", insw)
 	fmt.Printf("Delete %+v\n", delm)
 
 	fmt.Println("**** Обработка оружия закончилась успешно ****")
+	return nil
+}
+
+func SaveItems(h *sHero) error {
+	if h == nil {
+		return errors.New("Герой пустой!")
+	}
+	items := []sItem{}
+	err := Conn.Select(&items, "SELECT idItem as 'id', count from HeroToItems where idHero = ?", h.HeroDB.Id)
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
+	fmt.Println("**** Обработка предметов началась ****")
+	oldw := make(map[int]int)
+	neww := make(map[int]int)
+	delm := []int{}
+	updw := []sItem{}
+	insw := []sItem{}
+	var w sItem
+
+	for _, i := range items {
+		oldw[i.Id] = i.Count
+	}
+	for _, i := range h.Items {
+		neww[i.Id] = i.Count
+	}
+
+	fmt.Printf("Old %+v\n", oldw)
+	fmt.Printf("New %+v\n", neww)
+
+	for id, count := range neww {
+		if c, ok := oldw[id]; ok {
+			if c != count {
+				w.Id = id
+				w.Count = count
+				updw = append(updw, w)
+			}
+		} else {
+			w.Id = id
+			w.Count = count
+			insw = append(insw, w)
+		}
+	}
+
+	for id, _ := range oldw {
+		if _, ok := neww[id]; !ok {
+			delm = append(delm, id)
+		}
+	}
+
+	var e error
+	if err != nil {
+		return err
+	}
+	for _, i := range updw {
+		_, err := Conn.Exec("update herotoitems set count=? where idhero=? and iditem=?", i.Count, h.HeroDB.Id, i.Id)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	for _, i := range insw {
+		_, err := Conn.Exec("insert into herotoitems (idhero, iditem, count) values (?, ?, ?)", h.HeroDB.Id, i.Id, i.Count)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	for _, i := range delm {
+		_, err := Conn.Exec("delete from herotoitems where idhero=? and itemid=?", h.HeroDB.Id, i)
+		if err != nil {
+			e = err
+			break
+		}
+	}
+
+	if e != nil {
+		fmt.Println(e.Error())
+		return e
+	}
+
+	fmt.Printf("Update %+v\n", updw)
+	fmt.Printf("Insert %+v\n", insw)
+	fmt.Printf("Delete %+v\n", delm)
+
+	fmt.Println("**** Обработка предметов закончилась успешно ****")
 	return nil
 }
 
@@ -763,6 +881,15 @@ func (c *Context) SaveHero(iWrt web.ResponseWriter, iReq *web.Request) {
 				fmt.Println(e.Error())
 				tx.Rollback()
 			}
+
+			e = SaveItems(p.Hero)
+
+			if e != nil {
+				c.SetError(500, "Ошибки в транзакции")
+				fmt.Println(e.Error())
+				tx.Rollback()
+			}
+
 			tx.Commit()
 			c.Response = "true"
 			return
@@ -802,6 +929,10 @@ func (c *Context) SaveGame(iWrt web.ResponseWriter, iReq *web.Request) {
 					break
 				}
 				e = SaveWeapons(i.Hero)
+				if e != nil {
+					break
+				}
+				e = SaveItems(i.Hero)
 				if e != nil {
 					break
 				}
