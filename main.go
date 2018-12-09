@@ -56,6 +56,12 @@ type Context struct {
 	GameSessions map[string]int  `json:"games,omitempty"`
 	ServerVesion int             `json:"version,omitempty"`
 	Loot         *sLoot          `json:"loot,omitempty"`
+	Class        int             `json:"-"`
+}
+
+type snewHero struct {
+	Hero  *sHero `json:"Hero,omitempty"`
+	Class int    `json:"classid,omitempty"`
 }
 
 type sUser struct {
@@ -331,10 +337,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = InstallDB()
+		/*err = InstallDB()
 		if err != nil {
 			log.Fatal(err)
-		}
+		}*/
 	}
 	err = LoadConfig()
 	if err != nil {
@@ -343,24 +349,21 @@ func main() {
 	}
 	GameMap.m = make(map[string]sGame)
 	GameSessions = make(map[string]int)
-	//router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
-	router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
-	router.Subrouter(Context{}, "/").Post("/ping", (*Context).Ping)
+	router := web.New(Context{}).Middleware(web.LoggerMiddleware).Middleware((*Context).ErrorHandler)
+	//router := web.New(Context{}).Middleware((*Context).Logger).Middleware((*Context).ErrorHandler)
+	router.Subrouter(Context{}, "/").Get("/ping", (*Context).Ping)
 	router.Subrouter(Context{}, "/").Post("/reg", (*Context).Reg)
 	router.Subrouter(Context{}, "/").Post("/auth", (*Context).Auth)
 	router.Subrouter(Context{}, "/").Get("/manual", (*Context).GetManual)
-	//router.Subrouter(Context{}, "/").Middleware((*Context).ParsePatch).Patch("/sw", (*Context).SaveWeapons)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Post("/newGame", (*Context).NewGame).Delete("/newGame", (*Context).DestroyGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Middleware((*Context).Reconnect).Middleware((*Context).LoadHero).Post("/connect", (*Context).Connect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParsePost).Middleware((*Context).CheckUserSession).Delete("/connect", (*Context).Disconnect)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/heroList", (*Context).GetHeroes)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Get("/games", (*Context).GetAvaliableGames)
-	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Middleware((*Context).ParsePatch).Post("/newHero", (*Context).NewHero)
+	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetls).Middleware((*Context).CheckUserSession).Middleware((*Context).ParseNewHero).Post("/newHero", (*Context).NewHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Other", (*Context).GetOtherPlayers)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Get("/:game/Hero", (*Context).GetHero)
-	//router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Patch("/:game/Hero", (*Context).UpdateHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Middleware((*Context).UpdateHero).Patch("/:game/Hero", (*Context).Empty)
-	//router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveHero", (*Context).SaveHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParsePatch).Middleware((*Context).UpdateHero).Patch("/:game/SaveHero", (*Context).SaveHero)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Patch("/:game/SaveGame", (*Context).SaveGame)
 	router.Subrouter(Context{}, "/").Middleware((*Context).ParseGetgls).Middleware((*Context).CheckPlayerSession).Middleware((*Context).ParseLoot).Post("/:game/Loot", (*Context).OpenLoot)
@@ -437,6 +440,21 @@ func (c *Context) NewGame(iWrt web.ResponseWriter, iReq *web.Request) {
 
 	c.Game = session.String()
 	return
+}
+
+func (c *Context) ParseNewHero(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
+	buf := json.NewDecoder(iReq.Body)
+	defer iReq.Body.Close()
+	var hero snewHero
+	err := buf.Decode(&hero)
+	if err != nil {
+		c.SetError(400, "Невозможно преобразовать тело запроса в json")
+		return
+	}
+	c.Hero = hero.Hero
+	c.Class = hero.Class
+	fmt.Println(c.Class)
+	next(iWrt, iReq)
 }
 
 func (c *Context) ParsePost(iWrt web.ResponseWriter, iReq *web.Request, next web.NextMiddlewareFunc) {
@@ -816,7 +834,7 @@ func SaveItems(h *sHero) error {
 	}
 
 	for _, i := range delm {
-		_, err := Conn.Exec("delete from herotoitems where idhero=? and itemid=?", h.HeroDB.Id, i)
+		_, err := Conn.Exec("delete from herotoitems where idhero=? and iditem=?", h.HeroDB.Id, i)
 		if err != nil {
 			e = err
 			break
@@ -1310,7 +1328,10 @@ func (c *Context) NewHero(iWrt web.ResponseWriter, iReq *web.Request) {
 		fmt.Println(err.Error())
 		c.SetError(500, "Невозможно добавить героя в БД")
 	}*/
-
+	if c.Hero == nil {
+		c.SetError(406, "Герой получен неверно")
+		return
+	}
 	var e error
 	tx, err := Conn.Begin()
 	if err != nil {
@@ -1322,7 +1343,10 @@ func (c *Context) NewHero(iWrt web.ResponseWriter, iReq *web.Request) {
 		fmt.Println(err.Error())
 		e = err
 		c.SetError(500, "Невозможно добавить героя в БД")
+		tx.Rollback()
+		return
 	}
+
 	id, err := result.LastInsertId()
 	if err != nil {
 		e = err
@@ -1334,12 +1358,21 @@ func (c *Context) NewHero(iWrt web.ResponseWriter, iReq *web.Request) {
 		e = err
 		c.SetError(500, "Невозможно связать героя и пользователя")
 	}
+
+	_, err = Conn.Exec("Insert into herotoclass (idhero, idclass) values (?, ?)", id, c.Class)
+	if err != nil {
+		fmt.Println(err.Error())
+		e = err
+		c.SetError(500, "Невозможно связать героя и пользователя")
+	}
+
 	if e != nil {
 		c.SetError(500, "Невозможно добавить героя в БД")
 		tx.Rollback()
 		return
 	}
 	tx.Commit()
+	c.Hero = nil
 	c.Response = "true"
 }
 
@@ -1419,7 +1452,94 @@ func (c *Context) GetLoot(iWrt web.ResponseWriter, iReq *web.Request) {
 	}
 }
 
-func InstallDB() error {
+/*func (c *Context) TakeLoot(iWrt web.ResponseWriter, iReq *web.Request) {
+	if game, ok := GameMap.m[c.User.Game]; ok {
+		if player, ok := game.Player[c.User.Login]; ok {
+			if player.Role != 2 {
+				c.SetError(403, "Забрать лут может только player")
+				return
+			}
+			GameMap.Lock()
+			fmt.Println("**** Обработка оружия началась ****")
+			oldw := make(map[int]int)
+			neww := make(map[int]int)
+			delm := []int{}
+			updw := []sWeaponDB{}
+			insw := []sWeaponDB{}
+			var w sWeaponDB
+
+			for _, i := range game.Loot.Weapons {
+				oldw[i.Id] = i.Count
+			}
+			for _, i := range player.Hero.Weapons {
+				neww[i.Id] = i.Count
+			}
+
+			fmt.Printf("Old %+v\n", oldw)
+			fmt.Printf("New %+v\n", neww)
+
+			for id, count := range neww {
+				if c, ok := oldw[id]; ok {
+					if c != count {
+						w.Id = id
+						w.Count = count
+						updw = append(updw, w)
+					} else {
+						delm = append(delm, id)
+					}
+				} else {
+					w.Id = id
+					w.Count = count
+					insw = append(insw, w)
+				}
+			}
+
+			for id, _ := range oldw {
+				if _, ok := neww[id]; !ok {
+					delm = append(delm, id)
+				}
+			}
+
+			for id, count := range updw {
+				oldw[id] = oldw[id] - count
+			}
+
+			for id, i := range insw {
+				oldw[id] = i
+			}
+
+			for id, i := range delm {
+				delete(oldw, id)
+			}
+
+			fmt.Printf("Update %+v\n", updw)
+			fmt.Printf("Insert %+v\n", insw)
+			fmt.Printf("Delete %+v\n", delm)
+			fmt.Printf("New loot %+v\n", delm)
+			fmt.Println("**** Обработка оружия закончилась успешно ****")
+			GameMap.m[c.User.Game] = game
+			GameMap.Unlock()
+			c.Response = "true"
+		} else {
+			c.SetError(404, "Игрок не найден")
+			return
+		}
+
+	} else {
+		c.SetError(404, "Игра не найдена")
+		return
+	}
+}*/
+
+/*func InstallDB() error {
+	var schema = `DROP TABLE IF EXISTS abilities;
+CREATE TABLE abilities (
+  id int(10) unsigned NOT NULL AUTO_INCREMENT,
+  name varchar(50) NOT NULL DEFAULT 'Неизвестное название',
+  about varchar(255) NOT NULL DEFAULT 'Неизвестно',
+  exp int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (id)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=cp1251;`
 	b, err := ioutil.ReadFile(sqlstr)
 	if err != nil {
 		return err
@@ -1431,12 +1551,16 @@ func InstallDB() error {
 	if err != nil {
 		return err
 	}
-	_, err = conn.Exec(string(b))
+	//tx := sqlx.Execer
+	str := conn.Rebind(string(b))
+	str = str
+	_, err = conn.Exec(schema)
+	//fmt.Println(string(b))
 	if err != nil {
 		return err
 	}
 	return nil
-}
+}*/
 
 func InstallConfig() error {
 	var c sConfig
